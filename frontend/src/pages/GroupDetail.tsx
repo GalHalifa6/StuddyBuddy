@@ -41,6 +41,9 @@ const GroupDetail: React.FC = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messageRefs = useRef<Map<number, HTMLDivElement>>(new Map());
+  const highlightTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [highlightedMessageId, setHighlightedMessageId] = useState<number | null>(null);
   
   const [group, setGroup] = useState<StudyGroup | null>(null);
   const [memberStatus, setMemberStatus] = useState<GroupMemberStatus | null>(null);
@@ -57,6 +60,8 @@ const GroupDetail: React.FC = () => {
   const [selectedFile, setSelectedFile] = useState<FileUpload | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const chatFileInputRef = useRef<HTMLInputElement>(null);
+  const messageInputRef = useRef<HTMLInputElement>(null);
+  const newMessageRef = useRef<string>('');
   
   // Message context menu state
   const [contextMenu, setContextMenu] = useState<{ messageId: number; x: number; y: number } | null>(null);
@@ -88,11 +93,6 @@ const GroupDetail: React.FC = () => {
     onMessage: handleNewMessage,
   });
 
-  useEffect(() => {
-    if (id) {
-      fetchGroupData();
-    }
-  }, [id]);
 
   useEffect(() => {
     scrollToBottom();
@@ -102,7 +102,29 @@ const GroupDetail: React.FC = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
 
-  const fetchGroupData = async () => {
+  const scrollToMessage = (messageId: number) => {
+    // Clear any existing timeout first, regardless of whether element exists
+    if (highlightTimeoutRef.current) {
+      clearTimeout(highlightTimeoutRef.current);
+      highlightTimeoutRef.current = null;
+    }
+    
+    const messageElement = messageRefs.current.get(messageId);
+    if (messageElement) {
+      messageElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      // Highlight the message briefly
+      setHighlightedMessageId(messageId);
+      highlightTimeoutRef.current = setTimeout(() => {
+        setHighlightedMessageId(null);
+        highlightTimeoutRef.current = null;
+      }, 2000);
+    } else {
+      // Element doesn't exist - clear any existing highlight state
+      setHighlightedMessageId(null);
+    }
+  };
+
+  const fetchGroupData = useCallback(async () => {
     try {
       // First get group info and membership status
       const [groupData, status] = await Promise.all([
@@ -136,7 +158,13 @@ const GroupDetail: React.FC = () => {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [id]);
+
+  useEffect(() => {
+    if (id) {
+      fetchGroupData();
+    }
+  }, [id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -233,14 +261,14 @@ const GroupDetail: React.FC = () => {
   };
 
   // Fetch pinned messages
-  const fetchPinnedMessages = async () => {
+  const fetchPinnedMessages = useCallback(async () => {
     try {
       const pinned = await messageService.getPinnedMessages(parseInt(id!));
       setPinnedMessages(pinned);
     } catch (error) {
       console.error('Error fetching pinned messages:', error);
     }
-  };
+  }, [id]);
 
   // Upload file and send as chat message
   const handleChatFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -277,12 +305,91 @@ const GroupDetail: React.FC = () => {
     return () => document.removeEventListener('click', handleClickOutside);
   }, []);
 
-  // Fetch pinned messages on load
+  // Fetch pinned messages on load and when id changes
   useEffect(() => {
     if (id) {
       fetchPinnedMessages();
     }
-  }, [id]);
+  }, [id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Cleanup timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (highlightTimeoutRef.current) {
+        clearTimeout(highlightTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  // Keep ref in sync with newMessage state to avoid stale closures
+  useEffect(() => {
+    newMessageRef.current = newMessage;
+  }, [newMessage]);
+
+  // Auto-focus message input when chat tab is active
+  useEffect(() => {
+    if (activeTab === 'chat') {
+      // Use requestAnimationFrame for better timing
+      requestAnimationFrame(() => {
+        setTimeout(() => {
+          messageInputRef.current?.focus();
+        }, 50);
+      });
+    }
+  }, [activeTab]);
+
+  // Global keyboard listener for Enter key in chat section
+  useEffect(() => {
+    if (activeTab !== 'chat') return;
+
+    const handleKeyPress = async (e: KeyboardEvent) => {
+      // Only handle Enter key (not Shift+Enter)
+      if (e.key === 'Enter' && !e.shiftKey) {
+        const target = e.target as HTMLElement;
+        const isInputOrTextarea = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA';
+        
+        // If user is typing in the message input, let the input's onKeyDown handle it
+        if (isInputOrTextarea && target === messageInputRef.current) {
+          return; // Let the input's handler take care of it
+        }
+        
+        // If user is in another input/textarea (like search), don't interfere
+        if (isInputOrTextarea && target !== messageInputRef.current) {
+          return;
+        }
+        
+        // If Enter is pressed elsewhere in chat section, focus input and send if there's content
+        if (!isInputOrTextarea) {
+          e.preventDefault();
+          messageInputRef.current?.focus();
+          // Use ref to get current value, avoiding stale closures
+          const currentMessage = newMessageRef.current;
+          if (currentMessage.trim() && !isSending && id) {
+            setIsSending(true);
+            try {
+              await messageService.sendMessage(parseInt(id!), {
+                content: currentMessage,
+              });
+              setNewMessage('');
+              // Refocus input after sending
+              setTimeout(() => {
+                messageInputRef.current?.focus();
+              }, 0);
+            } catch (error) {
+              console.error('Error sending message:', error);
+            } finally {
+              setIsSending(false);
+            }
+          }
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyPress);
+    return () => {
+      window.removeEventListener('keydown', handleKeyPress);
+    };
+  }, [activeTab, isSending, id]);
 
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -296,6 +403,10 @@ const GroupDetail: React.FC = () => {
       });
       // Don't add message here - it will come through WebSocket
       setNewMessage('');
+      // Refocus input after sending message
+      setTimeout(() => {
+        messageInputRef.current?.focus();
+      }, 0);
     } catch (error) {
       console.error('Error sending message:', error);
     } finally {
@@ -572,7 +683,13 @@ const GroupDetail: React.FC = () => {
       {/* Tabs */}
       <div className="flex gap-2 mb-4">
         <button
-          onClick={() => setActiveTab('chat')}
+          onClick={() => {
+            setActiveTab('chat');
+            // Focus input immediately when switching to chat tab
+            setTimeout(() => {
+              messageInputRef.current?.focus();
+            }, 50);
+          }}
           className={`px-4 py-2 rounded-lg font-medium transition-colors ${
             activeTab === 'chat'
               ? 'bg-primary-100 text-primary-700'
@@ -625,7 +742,34 @@ const GroupDetail: React.FC = () => {
         {activeTab === 'chat' && (
           <>
             {/* Messages */}
-            <div className="flex-1 overflow-y-auto p-4 space-y-4">
+            <div 
+              className="flex-1 overflow-y-auto p-4 space-y-4"
+              onClick={(e) => {
+                // Only focus input if clicking on empty space (not on interactive elements)
+                const target = e.target as HTMLElement;
+                const selection = window.getSelection();
+                const hasTextSelected = selection && selection.toString().length > 0;
+                
+                // Don't focus if text is being selected
+                if (hasTextSelected) {
+                  return;
+                }
+                
+                // Check if clicking on interactive elements or message content
+                const isInteractive = 
+                  target.tagName === 'BUTTON' ||
+                  target.tagName === 'A' ||
+                  target.closest('button') !== null ||
+                  target.closest('a') !== null ||
+                  target.closest('.cursor-pointer') !== null || // Elements with cursor-pointer class (like file downloads)
+                  target.closest('.message-bubble') !== null; // Don't focus when clicking on message content
+                
+                // Focus input if clicking on empty space (not on interactive elements or message content)
+                if (!isInteractive) {
+                  messageInputRef.current?.focus();
+                }
+              }}
+            >
               {messages.length === 0 ? (
                 <div className="flex flex-col items-center justify-center h-full text-center">
                   <div className="w-20 h-20 bg-gray-100 rounded-full flex items-center justify-center mb-4">
@@ -654,7 +798,16 @@ const GroupDetail: React.FC = () => {
                         </div>
                       )}
                       <div
-                        className={`flex ${isOwn ? 'justify-end' : 'justify-start'} group`}
+                        ref={(el) => {
+                          if (el) {
+                            messageRefs.current.set(message.id, el);
+                          } else {
+                            messageRefs.current.delete(message.id);
+                          }
+                        }}
+                        className={`flex ${isOwn ? 'justify-end' : 'justify-start'} group transition-all duration-500 p-2 ${
+                          highlightedMessageId === message.id ? 'bg-purple-100 rounded-lg ring-2 ring-purple-300' : ''
+                        }`}
                       >
                         <div
                           className={`flex items-end gap-2 max-w-[70%] ${
@@ -675,7 +828,7 @@ const GroupDetail: React.FC = () => {
                             )}
                             {/* Pin indicator */}
                             {message.isPinned && (
-                              <div className="absolute -top-2 -right-2 bg-yellow-400 rounded-full p-1">
+                              <div className="absolute -top-2 -right-2 bg-purple-400 rounded-full p-1">
                                 <Pin className="w-3 h-3 text-white" />
                               </div>
                             )}
@@ -718,7 +871,7 @@ const GroupDetail: React.FC = () => {
                                     handleTogglePin(message.id);
                                   }}
                                   className={`p-1 rounded hover:bg-gray-200 transition-colors ${
-                                    message.isPinned ? 'text-yellow-500' : 'text-gray-400'
+                                    message.isPinned ? 'text-purple-500' : 'text-gray-400'
                                   }`}
                                   title={message.isPinned ? 'Unpin message' : 'Pin message'}
                                 >
@@ -750,19 +903,27 @@ const GroupDetail: React.FC = () => {
             {/* Pinned Messages Banner */}
             {pinnedMessages.length > 0 && (
               <div 
-                className="px-4 py-2 bg-yellow-50 border-b border-yellow-100 cursor-pointer hover:bg-yellow-100 transition-colors"
+                className="px-4 py-2 bg-purple-50 border-b border-purple-100 cursor-pointer hover:bg-purple-100 transition-colors"
                 onClick={() => setShowPinnedMessages(!showPinnedMessages)}
               >
                 <div className="flex items-center gap-2">
-                  <Pin className="w-4 h-4 text-yellow-600" />
-                  <span className="text-sm text-yellow-800 font-medium">
+                  <Pin className="w-4 h-4 text-purple-600" />
+                  <span className="text-sm text-purple-800 font-medium">
                     {pinnedMessages.length} pinned message{pinnedMessages.length > 1 ? 's' : ''}
                   </span>
                 </div>
                 {showPinnedMessages && (
                   <div className="mt-2 space-y-2">
                     {pinnedMessages.map((pm) => (
-                      <div key={pm.id} className="text-sm text-yellow-700 bg-yellow-100 p-2 rounded">
+                      <div 
+                        key={pm.id} 
+                        className="text-sm text-purple-700 bg-purple-100 p-2 rounded cursor-pointer hover:bg-purple-200 transition-colors"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          scrollToMessage(pm.id);
+                          setShowPinnedMessages(false);
+                        }}
+                      >
                         <span className="font-medium">{pm.sender.fullName || pm.sender.username}:</span>{' '}
                         {pm.content.length > 100 ? pm.content.substring(0, 100) + '...' : pm.content}
                       </div>
@@ -798,9 +959,20 @@ const GroupDetail: React.FC = () => {
                     )}
                   </button>
                   <input
+                    ref={messageInputRef}
                     type="text"
                     value={newMessage}
                     onChange={(e) => setNewMessage(e.target.value)}
+                    onKeyDown={(e) => {
+                      // Send message on Enter key press (only when chat tab is active)
+                      if (e.key === 'Enter' && !e.shiftKey && activeTab === 'chat') {
+                        e.preventDefault();
+                        if (newMessage.trim() && !isSending) {
+                          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                          handleSendMessage(e as any);
+                        }
+                      }
+                    }}
                     placeholder="Type your message..."
                     className="input flex-1"
                     disabled={isSending}

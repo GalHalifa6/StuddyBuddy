@@ -237,10 +237,123 @@ To make this production-ready, consider:
 
 ## Testing
 
-Run tests with:
+### Backend Tests
+
+The backend includes comprehensive unit and integration tests using JUnit, Mockito, and Spring Boot Test.
+
+#### Test Structure
+```
+src/test/java/com/studybuddy/test/
+├── config/
+│   └── TestConfig.java              # Shared test configuration
+├── unit/                            # Unit tests (isolated, mocked dependencies)
+│   ├── controller/
+│   │   ├── AdminControllerTest.java
+│   │   ├── AuthControllerTest.java
+│   │   ├── CourseControllerTest.java
+│   │   ├── FileControllerTest.java
+│   │   ├── GroupControllerTest.java
+│   │   ├── MessageControllerTest.java
+│   │   └── NotificationControllerTest.java
+│   ├── service/
+│   │   └── NotificationServiceTest.java
+│   └── security/
+│       └── JwtUtilsTest.java
+└── integration/                     # Integration tests (full Spring context)
+    ├── AdminIntegrationTest.java
+    ├── AuthIntegrationTest.java
+    ├── CourseIntegrationTest.java
+    ├── CrossComponentIntegrationTest.java
+    ├── FileIntegrationTest.java
+    ├── GroupIntegrationTest.java
+    ├── MessageIntegrationTest.java
+    └── NotificationIntegrationTest.java
+```
+
+#### Running Backend Tests
+
+**Run all tests:**
 ```bash
 mvn test
 ```
+
+**Run only unit tests:**
+```bash
+mvn test -Dtest=com.studybuddy.test.unit.*
+```
+
+**Run only integration tests:**
+```bash
+mvn test -Dtest=com.studybuddy.test.integration.*
+```
+
+**Run specific test class:**
+```bash
+mvn test -Dtest=AuthControllerTest
+```
+
+**Run tests with coverage:**
+```bash
+mvn test jacoco:report
+```
+
+Tests use a separate configuration file (`src/test/resources/application-test.properties`) with an in-memory H2 database that is cleared between tests.
+
+For detailed testing documentation, see `src/test/java/com/studybuddy/test/README.md`.
+
+### Frontend Tests
+
+The frontend uses Vitest with React Testing Library and MSW (Mock Service Worker) for API mocking.
+
+#### Test Structure
+```
+frontend/src/
+├── test/                            # Test utilities and setup
+│   ├── setup.ts                     # Global test setup
+│   ├── utils/                       # Test utilities
+│   │   ├── test-utils.tsx          # Custom render with providers
+│   │   └── index.ts                 # Exports
+│   └── mocks/                       # Mock data and API handlers
+│       ├── handlers.ts              # MSW request handlers
+│       ├── server.ts                # MSW server setup
+│       └── mockData.ts              # Reusable mock data
+├── components/__tests__/            # Component tests
+│   └── ProtectedRoute.test.tsx
+├── pages/__tests__/                 # Page tests
+│   └── Login.test.tsx
+└── api/__tests__/                   # API service tests
+    └── auth.test.ts
+```
+
+#### Running Frontend Tests
+
+**Run tests:**
+```bash
+cd frontend
+npm run test
+```
+
+**Run tests with coverage:**
+```bash
+npm run test:coverage
+```
+
+**Run tests in watch mode:**
+```bash
+npm run test:watch
+```
+
+**Run tests with UI:**
+```bash
+npm run test:ui
+```
+
+**Run tests once (CI mode):**
+```bash
+npm run test:run
+```
+
+For detailed frontend testing documentation, see `frontend/TESTING.md`.
 
 ## Building for Production
 
