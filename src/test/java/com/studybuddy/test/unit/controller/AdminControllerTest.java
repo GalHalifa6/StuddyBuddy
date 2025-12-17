@@ -5,7 +5,7 @@ import com.studybuddy.dto.AuthDto;
 import com.studybuddy.dto.UserAdminDto;
 import com.studybuddy.model.Role;
 import com.studybuddy.model.User;
-import com.studybuddy.repository.UserRepository;
+import com.studybuddy.repository.*;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -31,6 +31,24 @@ class AdminControllerTest {
 
     @Mock
     private UserRepository userRepository;
+
+    @Mock
+    private EmailVerificationTokenRepository emailVerificationTokenRepository;
+
+    @Mock
+    private NotificationRepository notificationRepository;
+
+    @Mock
+    private GroupMemberRequestRepository groupMemberRequestRepository;
+
+    @Mock
+    private QuestionVoteRepository questionVoteRepository;
+
+    @Mock
+    private SessionParticipantRepository sessionParticipantRepository;
+
+    @Mock
+    private ExpertProfileRepository expertProfileRepository;
 
     @InjectMocks
     private AdminController adminController;
@@ -224,8 +242,16 @@ class AdminControllerTest {
     @Test
     void testDeleteUser_Success() {
         // Arrange
-        when(userRepository.existsById(1L)).thenReturn(true);
-        doNothing().when(userRepository).deleteById(1L);
+        when(userRepository.findById(1L)).thenReturn(Optional.of(testUser));
+        doNothing().when(emailVerificationTokenRepository).deleteByUserId(anyLong());
+        doNothing().when(notificationRepository).deleteByUserId(anyLong());
+        doNothing().when(groupMemberRequestRepository).deleteByUserId(anyLong());
+        doNothing().when(groupMemberRequestRepository).deleteByInvitedById(anyLong());
+        doNothing().when(groupMemberRequestRepository).deleteByRespondedById(anyLong());
+        doNothing().when(questionVoteRepository).deleteByUserId(anyLong());
+        doNothing().when(sessionParticipantRepository).deleteByUserId(anyLong());
+        doNothing().when(expertProfileRepository).deleteByUserId(anyLong());
+        doNothing().when(userRepository).delete(any(User.class));
 
         // Act
         ResponseEntity<?> response = adminController.deleteUser(1L);
@@ -236,20 +262,26 @@ class AdminControllerTest {
         assertTrue(response.getBody() instanceof AuthDto.MessageResponse);
         AuthDto.MessageResponse messageResponse = (AuthDto.MessageResponse) response.getBody();
         assertTrue(messageResponse.isSuccess());
-        verify(userRepository, times(1)).deleteById(1L);
+        verify(userRepository, times(1)).findById(1L);
+        verify(userRepository, times(1)).delete(any(User.class));
     }
 
     @Test
     void testDeleteUser_NotFound() {
         // Arrange
-        when(userRepository.existsById(1L)).thenReturn(false);
+        when(userRepository.findById(1L)).thenReturn(Optional.empty());
 
         // Act
         ResponseEntity<?> response = adminController.deleteUser(1L);
 
         // Assert
         assertEquals(HttpStatus.NOT_FOUND, response.getStatusCode());
-        verify(userRepository, never()).deleteById(anyLong());
+        verify(userRepository, times(1)).findById(1L);
+        verify(userRepository, never()).delete(any(User.class));
     }
 }
+
+
+
+
 

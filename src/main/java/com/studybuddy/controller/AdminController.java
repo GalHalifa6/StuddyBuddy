@@ -4,13 +4,15 @@ import com.studybuddy.dto.AuthDto;
 import com.studybuddy.dto.UserAdminDto;
 import com.studybuddy.model.Role;
 import com.studybuddy.model.User;
-import com.studybuddy.repository.UserRepository;
+import com.studybuddy.repository.*;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.Optional;
 import java.util.stream.Collectors;
 
 /**
@@ -24,6 +26,24 @@ public class AdminController {
 
     @Autowired
     private UserRepository userRepository;
+    
+    @Autowired
+    private EmailVerificationTokenRepository emailVerificationTokenRepository;
+    
+    @Autowired
+    private NotificationRepository notificationRepository;
+    
+    @Autowired
+    private GroupMemberRequestRepository groupMemberRequestRepository;
+    
+    @Autowired
+    private QuestionVoteRepository questionVoteRepository;
+    
+    @Autowired
+    private SessionParticipantRepository sessionParticipantRepository;
+    
+    @Autowired
+    private ExpertProfileRepository expertProfileRepository;
 
     @GetMapping("/users")
     public ResponseEntity<List<UserAdminDto>> getAllUsers() {
@@ -72,11 +92,46 @@ public class AdminController {
     }
 
     @DeleteMapping("/users/{id}")
+    @Transactional
     public ResponseEntity<?> deleteUser(@PathVariable Long id) {
-        if (!userRepository.existsById(id)) {
+        Optional<User> userOpt = userRepository.findById(id);
+        if (userOpt.isEmpty()) {
             return ResponseEntity.notFound().build();
         }
-        userRepository.deleteById(id);
+        
+        User user = userOpt.get();
+        
+        // Delete all child records that reference this user to avoid foreign key constraint violations
+        // Order matters: delete records that might have their own dependencies first
+        
+        // 1. Delete email verification tokens (by ID to avoid entity state issues)
+        emailVerificationTokenRepository.deleteByUserId(id);
+        
+        // 2. Delete notifications
+        notificationRepository.deleteByUserId(id);
+        
+        // 3. Delete group member requests (join requests and invites)
+        // Delete where user is the requester/invited user
+        groupMemberRequestRepository.deleteByUserId(id);
+        // Delete where user is the inviter
+        groupMemberRequestRepository.deleteByInvitedById(id);
+        // Delete where user is the responder
+        groupMemberRequestRepository.deleteByRespondedById(id);
+        
+        // 4. Delete question votes
+        questionVoteRepository.deleteByUserId(id);
+        
+        // 5. Delete session participants
+        sessionParticipantRepository.deleteByUserId(id);
+        
+        // 6. Delete expert profile (if exists)
+        expertProfileRepository.deleteByUserId(id);
+        
+        // 7. Finally, delete the user
+        // Note: Other relationships like messages, files, createdGroups are handled by cascade delete
+        // Many-to-many relationships (courses, groups) will be automatically removed when user is deleted
+        userRepository.delete(user);
+        
         return ResponseEntity.ok(new AuthDto.MessageResponse("User deleted successfully", true));
     }
 

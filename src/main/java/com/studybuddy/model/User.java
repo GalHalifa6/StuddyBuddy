@@ -9,7 +9,6 @@ import lombok.Setter;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import lombok.AllArgsConstructor;
-import lombok.Data;
 import lombok.NoArgsConstructor;
 import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.annotation.LastModifiedDate;
@@ -18,7 +17,6 @@ import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 import java.time.LocalDateTime;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
 
 /**
@@ -49,10 +47,18 @@ public class User {
     @Column(unique = true, nullable = false)
     private String email;
 
-    @NotBlank
-    @Column(nullable = false)
+    // Password is nullable for Google OAuth users
+    @Column(nullable = true)
     @JsonIgnore
     private String password;
+
+    // Google OAuth identifier (sub claim from Google)
+    @Column(unique = true, nullable = true)
+    private String googleSub;
+
+    // Email verification status
+    @Column(nullable = false)
+    private Boolean emailVerified = false;
 
     private String fullName;
 

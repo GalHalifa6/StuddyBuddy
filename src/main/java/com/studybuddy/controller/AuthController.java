@@ -5,7 +5,11 @@ import com.studybuddy.model.Role;
 import com.studybuddy.model.User;
 import com.studybuddy.repository.UserRepository;
 import com.studybuddy.security.JwtUtils;
+import com.studybuddy.service.EmailDomainService;
+import com.studybuddy.service.EmailVerificationService;
 import jakarta.validation.Valid;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.authentication.AuthenticationManager;
@@ -31,6 +35,8 @@ import java.util.stream.Collectors;
 @RequestMapping("/api/auth")
 public class AuthController {
 
+    private static final Logger logger = LoggerFactory.getLogger(AuthController.class);
+
     @Autowired
     private AuthenticationManager authenticationManager;
 
@@ -43,6 +49,12 @@ public class AuthController {
     @Autowired
     private JwtUtils jwtUtils;
 
+    @Autowired
+    private EmailDomainService emailDomainService;
+
+    @Autowired
+    private EmailVerificationService emailVerificationService;
+
     @PostMapping("/register")
     public ResponseEntity<?> registerUser(@Valid @RequestBody AuthDto.RegisterRequest request, BindingResult bindingResult) {
         // Collect validation errors
@@ -52,6 +64,12 @@ public class AuthController {
             errors.addAll(bindingResult.getFieldErrors().stream()
                     .map(FieldError::getDefaultMessage)
                     .collect(Collectors.toList()));
+        }
+
+        // Validate email domain against allowed domains
+        if (!emailDomainService.isEmailDomainAllowed(request.getEmail())) {
+            String domain = emailDomainService.extractDomain(request.getEmail());
+            errors.add("Email domain '" + domain + "' is not authorized. Please use your academic institution email.");
         }
 
         // Check for existing username
@@ -92,12 +110,25 @@ public class AuthController {
         user.setFullName(request.getFullName());
         user.setRole(role);
         user.setIsActive(true);
+        user.setEmailVerified(false); // Email not verified yet
         user.setTopicsOfInterest(new ArrayList<>());
         user.setPreferredLanguages(new ArrayList<>());
 
         userRepository.save(user);
 
-        return ResponseEntity.ok(new AuthDto.MessageResponse("User registered successfully as " + role.getDisplayName() + "!", true));
+        // Send verification email
+        try {
+            emailVerificationService.createAndSendVerificationToken(user);
+            logger.info("Verification email sent to user: {}", user.getEmail());
+        } catch (Exception e) {
+            logger.error("Failed to send verification email to {}: {}", user.getEmail(), e.getMessage());
+            // Continue with registration even if email fails
+        }
+
+        return ResponseEntity.ok(new AuthDto.MessageResponse(
+                "User registered successfully! Please check your email to verify your account.", 
+                true
+        ));
     }
 
     @PostMapping("/login")
@@ -118,19 +149,40 @@ public class AuthController {
 
             SecurityContextHolder.getContext().setAuthentication(authentication);
             UserDetails userDetails = (UserDetails) authentication.getPrincipal();
-            String jwt = jwtUtils.generateToken(userDetails);
 
             User user = userRepository.findByUsername(userDetails.getUsername())
                     .orElseThrow(() -> new RuntimeException("User not found"));
 
-            return ResponseEntity.ok(new AuthDto.JwtResponse(
-                    jwt, 
-                    user.getId(), 
-                    user.getUsername(), 
+            // Check if email is verified (only for manual registration users)
+            if (!user.getEmailVerified() && user.getGoogleSub() == null) {
+                List<String> errors = List.of("Please verify your email address before logging in. Check your inbox for the verification link.");
+                return ResponseEntity.status(403)
+                        .body(new AuthDto.MessageResponse(
+                                "Email not verified",
+                                false,
+                                errors,
+                                "EMAIL_NOT_VERIFIED"
+                        ));
+            }
+
+            // Generate JWT token
+            String jwt = jwtUtils.generateToken(userDetails);
+
+            // Get institution name from email domain
+            String institutionName = emailDomainService.getInstitutionName(user.getEmail());
+
+            // Create user info response
+            AuthDto.UserInfo userInfo = new AuthDto.UserInfo(
+                    user.getId(),
+                    user.getUsername(),
                     user.getEmail(),
                     user.getRole().name(),
-                    user.getFullName()
-            ));
+                    user.getFullName(),
+                    user.getEmailVerified(),
+                    institutionName
+            );
+
+            return ResponseEntity.ok(new AuthDto.JwtResponse(jwt, userInfo));
         } catch (BadCredentialsException e) {
             List<String> errors = List.of("Invalid username or password");
             return ResponseEntity.badRequest()
@@ -176,5 +228,93 @@ public class AuthController {
                 .orElseThrow(() -> new RuntimeException("User not found"));
 
         return ResponseEntity.ok(AuthDto.UserResponse.fromUser(user));
+    }
+
+    /**
+     * Verify email with token
+     */
+    @GetMapping("/verify-email")
+    public ResponseEntity<?> verifyEmail(@RequestParam String token) {
+        if (token == null || token.isEmpty()) {
+            return ResponseEntity.badRequest()
+                    .body(new AuthDto.MessageResponse("Verification token is required", false));
+        }
+
+        boolean verified = emailVerificationService.verifyEmail(token);
+        
+        if (verified) {
+            return ResponseEntity.ok(new AuthDto.MessageResponse(
+                    "Email verified successfully! You can now log in.", 
+                    true
+            ));
+        } else {
+            return ResponseEntity.badRequest()
+                    .body(new AuthDto.MessageResponse(
+                            "Invalid or expired verification token. Please request a new verification email.", 
+                            false
+                    ));
+        }
+    }
+
+    /**
+     * Resend verification email
+     */
+    @PostMapping("/resend-verification")
+    public ResponseEntity<?> resendVerification(@Valid @RequestBody AuthDto.ResendVerificationRequest request, 
+                                                 BindingResult bindingResult) {
+        if (bindingResult.hasErrors()) {
+            List<String> errors = bindingResult.getFieldErrors().stream()
+                    .map(FieldError::getDefaultMessage)
+                    .collect(Collectors.toList());
+            return ResponseEntity.badRequest()
+                    .body(new AuthDto.MessageResponse("Invalid request", false, errors));
+        }
+
+        User user = userRepository.findByEmail(request.getEmail())
+                .orElse(null);
+
+        if (user == null) {
+            // Don't reveal if email exists or not for security
+            return ResponseEntity.ok(new AuthDto.MessageResponse(
+                    "If an account with this email exists and is not verified, a verification email has been sent.", 
+                    true
+            ));
+        }
+
+        // Check if already verified
+        if (user.getEmailVerified()) {
+            return ResponseEntity.badRequest()
+                    .body(new AuthDto.MessageResponse(
+                            "This email is already verified. You can log in directly.", 
+                            false
+                    ));
+        }
+
+        // Check if user is a Google OAuth user
+        if (user.getGoogleSub() != null) {
+            return ResponseEntity.badRequest()
+                    .body(new AuthDto.MessageResponse(
+                            "This account uses Google Sign-In and doesn't require email verification.", 
+                            false
+                    ));
+        }
+
+        // Send new verification email
+        try {
+            emailVerificationService.createAndSendVerificationToken(user);
+            logger.info("Resent verification email to: {}", user.getEmail());
+        } catch (Exception e) {
+            logger.error("Failed to resend verification email to {}: {}", user.getEmail(), e.getMessage());
+            return ResponseEntity.status(500)
+                    .body(new AuthDto.MessageResponse(
+                            "Failed to send verification email. Please try again later.", 
+                            false
+                    ));
+        }
+
+        return ResponseEntity.ok(new AuthDto.MessageResponse(
+                "If an account with this email exists and is not verified, a verification email has been sent.", 
+                true
+        ));
     }
 }

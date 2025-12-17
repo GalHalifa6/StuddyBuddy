@@ -35,6 +35,13 @@ export const authService = {
     return response.data;
   },
 
+  verifyEmail: async (token: string): Promise<MessageResponse> => {
+    const response = await api.get<MessageResponse>('/auth/verify-email', {
+      params: { token },
+    });
+    return response.data;
+  },
+
   logout: () => {
     localStorage.removeItem('token');
   },
