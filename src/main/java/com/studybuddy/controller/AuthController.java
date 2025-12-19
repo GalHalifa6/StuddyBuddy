@@ -7,6 +7,7 @@ import com.studybuddy.repository.UserRepository;
 import com.studybuddy.security.JwtUtils;
 import com.studybuddy.service.EmailDomainService;
 import com.studybuddy.service.EmailVerificationService;
+import com.studybuddy.service.GoogleAccountLinkingService;
 import jakarta.validation.Valid;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -25,6 +26,7 @@ import org.springframework.web.bind.annotation.*;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 /**
@@ -54,6 +56,9 @@ public class AuthController {
 
     @Autowired
     private EmailVerificationService emailVerificationService;
+
+    @Autowired
+    private GoogleAccountLinkingService linkingService;
 
     @PostMapping("/register")
     public ResponseEntity<?> registerUser(@Valid @RequestBody AuthDto.RegisterRequest request, BindingResult bindingResult) {
@@ -315,6 +320,53 @@ public class AuthController {
         return ResponseEntity.ok(new AuthDto.MessageResponse(
                 "If an account with this email exists and is not verified, a verification email has been sent.", 
                 true
+        ));
+    }
+
+    /**
+     * Initiate Google account linking
+     * Requires user to be authenticated (logged in with password)
+     * Returns OAuth URL with linking token
+     */
+    @PostMapping("/link-google")
+    public ResponseEntity<?> initiateGoogleLinking() {
+        // Get authenticated user
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication == null || !authentication.isAuthenticated()) {
+            return ResponseEntity.status(401)
+                    .body(new AuthDto.MessageResponse(
+                            "Authentication required. Please log in first.",
+                            false,
+                            List.of("You must be logged in to link your Google account.")
+                    ));
+        }
+
+        String username = authentication.getName();
+        User user = userRepository.findByUsername(username)
+                .orElseThrow(() -> new RuntimeException("User not found"));
+
+        // Check if Google account is already linked
+        if (user.getGoogleSub() != null) {
+            return ResponseEntity.badRequest()
+                    .body(new AuthDto.MessageResponse(
+                            "Google account is already linked to this account.",
+                            false,
+                            List.of("Your Google account is already linked.")
+                    ));
+        }
+
+        // Generate linking token
+        String linkingToken = linkingService.generateLinkingToken(user.getId(), user.getEmail());
+
+        // Build OAuth URL with linking token
+        // The frontend will redirect to this URL
+        String oauthUrl = "/oauth2/authorization/google?linkToken=" + linkingToken;
+
+        logger.info("Generated linking token for user: {} (ID: {})", username, user.getId());
+
+        return ResponseEntity.ok(Map.of(
+                "oauthUrl", oauthUrl,
+                "message", "Redirect to the provided OAuth URL to complete Google account linking."
         ));
     }
 }

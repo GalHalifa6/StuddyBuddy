@@ -13,6 +13,7 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.Optional;
 
 /**
  * Admin Controller for managing allowed email domains
@@ -49,14 +50,17 @@ public class DomainAdminController {
      */
     @PostMapping
     public ResponseEntity<?> addDomain(@Valid @RequestBody DomainRequest request) {
-        // Check if domain already exists
-        if (domainRepository.existsByDomain(request.getDomain())) {
+        // Normalize domain to lowercase for consistent storage and checking
+        String normalizedDomain = request.getDomain().toLowerCase();
+        
+        // Check if domain already exists (using normalized lowercase)
+        if (domainRepository.existsByDomain(normalizedDomain)) {
             return ResponseEntity.badRequest()
                     .body(new ErrorResponse("Domain already exists"));
         }
 
         AllowedEmailDomain domain = new AllowedEmailDomain();
-        domain.setDomain(request.getDomain().toLowerCase());
+        domain.setDomain(normalizedDomain);
         domain.setStatus(request.getStatus() != null ? 
                 request.getStatus() : AllowedEmailDomain.DomainStatus.ALLOW);
         domain.setInstitutionName(request.getInstitutionName());
@@ -73,8 +77,18 @@ public class DomainAdminController {
                                           @Valid @RequestBody DomainRequest request) {
         return domainRepository.findById(id)
                 .map(domain -> {
+                    // If domain is being updated, check for duplicates (excluding current domain)
                     if (request.getDomain() != null) {
-                        domain.setDomain(request.getDomain().toLowerCase());
+                        String normalizedDomain = request.getDomain().toLowerCase();
+                        
+                        // Check if another domain with the same normalized name exists (excluding current)
+                        Optional<AllowedEmailDomain> existingDomain = domainRepository.findByDomain(normalizedDomain);
+                        if (existingDomain.isPresent() && !existingDomain.get().getId().equals(id)) {
+                            return ResponseEntity.badRequest()
+                                    .body(new ErrorResponse("Domain already exists"));
+                        }
+                        
+                        domain.setDomain(normalizedDomain);
                     }
                     if (request.getStatus() != null) {
                         domain.setStatus(request.getStatus());
@@ -125,6 +139,7 @@ public class DomainAdminController {
         private String message;
     }
 }
+
 
 
 

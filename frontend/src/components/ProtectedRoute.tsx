@@ -27,7 +27,16 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children }) => {
   }
 
   const isOnboardingRoute = location.pathname === '/onboarding';
-  const needsOnboarding = user && user.role === 'USER' && user.onboardingCompleted !== true;
+  
+  // DEV-ONLY: Temporary bypass for testing Google linking flow
+  // Set VITE_DISABLE_ONBOARDING_CHECK=true in .env.local to bypass onboarding
+  // This should NEVER be set in production
+  const disableOnboardingCheck = import.meta.env.VITE_DISABLE_ONBOARDING_CHECK === 'true';
+  
+  const needsOnboarding = !disableOnboardingCheck && 
+                          user && 
+                          user.role === 'USER' && 
+                          user.onboardingCompleted !== true;
 
   if (needsOnboarding && !isOnboardingRoute) {
     return <Navigate to="/onboarding" replace />;

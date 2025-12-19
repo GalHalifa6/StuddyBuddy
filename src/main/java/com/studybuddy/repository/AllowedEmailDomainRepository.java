@@ -21,3 +21,4 @@ public interface AllowedEmailDomainRepository extends JpaRepository<AllowedEmail
 
 
 
+

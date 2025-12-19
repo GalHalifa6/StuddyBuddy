@@ -42,6 +42,11 @@ export const authService = {
     return response.data;
   },
 
+  linkGoogleAccount: async (): Promise<{ oauthUrl: string; message: string }> => {
+    const response = await api.post<{ oauthUrl: string; message: string }>('/auth/link-google');
+    return response.data;
+  },
+
   logout: () => {
     localStorage.removeItem('token');
   },

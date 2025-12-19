@@ -283,9 +283,13 @@ public class DataInitializer implements CommandLineRunner {
     }
 
     private void createAllowedDomain(String domain, String institutionName) {
-        if (!allowedEmailDomainRepository.existsByDomain(domain)) {
+        // Normalize domain to lowercase for consistent storage and checking
+        // This matches the behavior of DomainAdminController.addDomain()
+        String normalizedDomain = domain.toLowerCase();
+        
+        if (!allowedEmailDomainRepository.existsByDomain(normalizedDomain)) {
             AllowedEmailDomain allowedDomain = new AllowedEmailDomain();
-            allowedDomain.setDomain(domain);
+            allowedDomain.setDomain(normalizedDomain);
             allowedDomain.setStatus(AllowedEmailDomain.DomainStatus.ALLOW);
             allowedDomain.setInstitutionName(institutionName);
             allowedEmailDomainRepository.save(allowedDomain);

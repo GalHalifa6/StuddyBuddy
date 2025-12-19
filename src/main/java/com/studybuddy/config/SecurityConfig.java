@@ -2,6 +2,7 @@ package com.studybuddy.config;
 
 import com.studybuddy.security.CustomOAuth2AuthorizationRequestResolver;
 import com.studybuddy.security.JwtAuthenticationFilter;
+import com.studybuddy.security.OAuth2FailureHandler;
 import com.studybuddy.security.OAuth2SuccessHandler;
 import com.studybuddy.security.OAuth2UserServiceImpl;
 import com.studybuddy.security.OidcUserServiceImpl;
@@ -51,6 +52,9 @@ public class SecurityConfig {
     private OAuth2SuccessHandler oauth2SuccessHandler;
 
     @Autowired
+    private OAuth2FailureHandler oauth2FailureHandler;
+
+    @Autowired
     private ClientRegistrationRepository clientRegistrationRepository;
 
     @Bean
@@ -94,6 +98,7 @@ public class SecurityConfig {
                                 .oidcUserService(oidcUserService)
                         )
                         .successHandler(oauth2SuccessHandler)
+                        .failureHandler(oauth2FailureHandler)
                 );
 
         http.authenticationProvider(authenticationProvider());

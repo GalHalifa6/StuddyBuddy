@@ -138,6 +138,7 @@ public class AuthDto {
         private String role;
         private Boolean isActive;
         private Boolean emailVerified;
+        private String googleSub; // Google OAuth identifier (null if not linked)
         private List<String> topicsOfInterest;
         private String proficiencyLevel;
         private List<String> preferredLanguages;
@@ -155,6 +156,7 @@ public class AuthDto {
                 user.getRole() != null ? user.getRole().name() : null,
                 user.getIsActive(),
                 user.getEmailVerified(),
+                user.getGoogleSub(), // Expose googleSub to frontend
                 user.getTopicsOfInterest(),
                 user.getProficiencyLevel(),
                 user.getPreferredLanguages(),

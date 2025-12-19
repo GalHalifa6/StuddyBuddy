@@ -6,13 +6,50 @@ import { CheckCircle2, XCircle, Loader2 } from 'lucide-react';
 const GoogleCallback: React.FC = () => {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
-  const { refreshUser } = useAuth();
+  const { user: currentUser, refreshUser } = useAuth();
   const [status, setStatus] = useState<'loading' | 'success' | 'error'>('loading');
   const [message, setMessage] = useState<string>('');
+  const [isLinking, setIsLinking] = useState(false);
 
   useEffect(() => {
     const handleCallback = async () => {
       const token = searchParams.get('token');
+      const error = searchParams.get('error');
+
+      // Check if this was a linking flow (user was already logged in)
+      const wasLoggedIn = !!localStorage.getItem('token');
+      const previousGoogleSub = currentUser?.googleSub;
+
+      // Handle OAuth errors from backend
+      if (error) {
+        setStatus('error');
+        const errorDescription = searchParams.get('error_description');
+        
+        // Use error_description from backend if available, otherwise use default messages
+        let errorMessage = errorDescription || 'Authentication failed. Please try again.';
+        
+        // Fallback to specific messages if error_description is not provided
+        if (!errorDescription) {
+          if (error === 'email_already_registered') {
+            errorMessage = 'An account with this email already exists. Please sign in with your password first, then link your Google account from your profile settings.';
+          } else if (error === 'invalid_linking_token') {
+            errorMessage = 'Invalid or expired linking token. Please try linking your Google account again from your profile settings.';
+          } else if (error === 'email_not_verified') {
+            errorMessage = 'Your Google email is not verified. Please verify your email with Google first.';
+          } else if (error === 'domain_not_allowed') {
+            errorMessage = 'This email domain is not authorized. Please use your academic institution email.';
+          } else if (error === 'email_not_provided') {
+            errorMessage = 'Email not provided by Google. Please try again.';
+          } else if (error === 'sub_not_provided') {
+            errorMessage = 'Google authentication information is incomplete. Please try again.';
+          } else if (error === 'processing_error') {
+            errorMessage = 'An error occurred while processing your authentication. Please try again.';
+          }
+        }
+        
+        setMessage(errorMessage);
+        return;
+      }
 
       if (!token) {
         setStatus('error');
@@ -27,24 +64,34 @@ const GoogleCallback: React.FC = () => {
         // Refresh user data in auth context
         await refreshUser();
         
-        setStatus('success');
-        setMessage('Successfully signed in with Google!');
+        // Check if this was a linking flow
+        // If user was logged in before and didn't have googleSub, but now does, it was linking
+        const wasLinking = wasLoggedIn && !previousGoogleSub;
         
-        // Redirect to dashboard after a brief delay
+        setStatus('success');
+        if (wasLinking) {
+          setIsLinking(true);
+          setMessage('Google account successfully linked! You can now sign in with either your password or Google.');
+        } else {
+          setMessage('Successfully signed in with Google!');
+        }
+        
+        // Redirect to dashboard (or settings if linking) after a brief delay
         setTimeout(() => {
-          navigate('/dashboard');
-        }, 1500);
+          navigate(wasLinking ? '/settings' : '/dashboard');
+        }, 2000);
       } catch (error: any) {
         setStatus('error');
         localStorage.removeItem('token');
         const errorMessage = error.response?.data?.message || 
+                           error.response?.data?.errors?.[0] ||
                            'Failed to complete Google sign-in. Please try again.';
         setMessage(errorMessage);
       }
     };
 
     handleCallback();
-  }, [searchParams, navigate, refreshUser]);
+  }, [searchParams, navigate, refreshUser, currentUser]);
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4">
@@ -64,16 +111,18 @@ const GoogleCallback: React.FC = () => {
             <div className="flex justify-center mb-4">
               <CheckCircle2 className="w-16 h-16 text-green-500" />
             </div>
-            <h1 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">Welcome!</h1>
+            <h1 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">
+              {isLinking ? 'Account Linked!' : 'Welcome!'}
+            </h1>
             <p className="text-gray-600 dark:text-gray-400 mb-6">{message}</p>
             <p className="text-sm text-gray-500 dark:text-gray-500">
-              Redirecting to dashboard...
+              Redirecting{isLinking ? ' to settings' : ' to dashboard'}...
             </p>
             <button
-              onClick={() => navigate('/dashboard')}
+              onClick={() => navigate(isLinking ? '/settings' : '/dashboard')}
               className="mt-4 w-full btn-primary"
             >
-              Go to Dashboard
+              {isLinking ? 'Go to Settings' : 'Go to Dashboard'}
             </button>
           </>
         )}

@@ -11,3 +11,4 @@ export const getOAuthAuthUrl = (provider: string = 'google'): string => {
   return `${API_BASE_URL}/oauth2/authorization/${provider}`;
 };
 
+

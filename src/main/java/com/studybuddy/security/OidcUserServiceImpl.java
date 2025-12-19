@@ -2,9 +2,11 @@ package com.studybuddy.security;
 
 import com.studybuddy.model.Role;
 import com.studybuddy.model.User;
-import com.studybuddy.repository.EmailVerificationTokenRepository;
 import com.studybuddy.repository.UserRepository;
 import com.studybuddy.service.EmailDomainService;
+import com.studybuddy.service.GoogleAccountLinkingService;
+import com.studybuddy.service.OidcUserProcessingService;
+import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -14,6 +16,8 @@ import org.springframework.security.oauth2.core.OAuth2AuthenticationException;
 import org.springframework.security.oauth2.core.OAuth2Error;
 import org.springframework.security.oauth2.core.oidc.user.OidcUser;
 import org.springframework.stereotype.Service;
+import org.springframework.web.context.request.RequestContextHolder;
+import org.springframework.web.context.request.ServletRequestAttributes;
 
 import java.util.ArrayList;
 import java.util.Optional;
@@ -35,14 +39,20 @@ public class OidcUserServiceImpl extends OidcUserService {
     private EmailDomainService emailDomainService;
 
     @Autowired
-    private EmailVerificationTokenRepository emailVerificationTokenRepository;
+    private GoogleAccountLinkingService linkingService;
+
+    @Autowired
+    private OidcUserProcessingService oidcUserProcessingService;
 
     @Override
     public OidcUser loadUser(OidcUserRequest userRequest) throws OAuth2AuthenticationException {
         OidcUser oidcUser = super.loadUser(userRequest);
 
         try {
-            return processOidcUser(oidcUser);
+            // Extract linking token from state parameter if present
+            String linkingToken = extractLinkingTokenFromState();
+            
+            return processOidcUser(oidcUser, linkingToken);
         } catch (OAuth2AuthenticationException ex) {
             throw ex;
         } catch (Exception ex) {
@@ -53,7 +63,39 @@ public class OidcUserServiceImpl extends OidcUserService {
         }
     }
 
-    private OidcUser processOidcUser(OidcUser oidcUser) throws OAuth2AuthenticationException {
+    /**
+     * Extract linking token from request
+     * First tries to get it from request attribute (set by CustomOAuth2AuthorizationRequestResolver)
+     * Falls back to extracting from state parameter if needed
+     */
+    private String extractLinkingTokenFromState() {
+        try {
+            ServletRequestAttributes attributes = (ServletRequestAttributes) RequestContextHolder.getRequestAttributes();
+            if (attributes != null) {
+                HttpServletRequest request = attributes.getRequest();
+                
+                // First, try to get from request attribute (most reliable)
+                String linkToken = (String) request.getAttribute("googleLinkingToken");
+                if (linkToken != null && !linkToken.isEmpty()) {
+                    return linkToken;
+                }
+                
+                // Fallback: try to extract from state parameter
+                String state = request.getParameter("state");
+                if (state != null && state.contains("|linkToken:")) {
+                    String[] parts = state.split("\\|linkToken:");
+                    if (parts.length == 2) {
+                        return parts[1];
+                    }
+                }
+            }
+        } catch (Exception e) {
+            logger.debug("Could not extract linking token: {}", e.getMessage());
+        }
+        return null;
+    }
+
+    private OidcUser processOidcUser(OidcUser oidcUser, String linkingToken) throws OAuth2AuthenticationException {
         // Extract user info from Google ID Token / UserInfo
         String email = oidcUser.getAttribute("email");
         Boolean emailVerified = oidcUser.getAttribute("email_verified");
@@ -103,44 +145,75 @@ public class OidcUserServiceImpl extends OidcUserService {
         if (userOptional.isPresent()) {
             // Existing user with matching googleSub - update and verify
             user = userOptional.get();
-            user.setEmailVerified(true);
-            if (user.getFullName() == null || user.getFullName().isEmpty()) {
-                user.setFullName(name != null ? name : givenName);
-            }
-            
-            // Since Google verified the email, delete any email verification tokens (no longer needed)
-            emailVerificationTokenRepository.deleteByUserId(user.getId());
-            
-            userRepository.save(user);
-            logger.info("Updated existing OIDC user: {}", email);
+            oidcUserProcessingService.updateExistingOidcUser(user, name != null ? name : givenName);
         } else {
-            // Check if email already exists (security check)
+            // Check if email already exists
             Optional<User> existingUserByEmail = userRepository.findByEmail(email);
             if (existingUserByEmail.isPresent()) {
-                // Email exists but googleSub doesn't match - security issue
-                // Do not link accounts automatically - reject with clear error
-                throw new OAuth2AuthenticationException(
-                        new OAuth2Error("email_already_registered",
-                                "An account with this email already exists. Please log in with your password, or contact support if you need to link your Google account.",
-                                null)
-                );
-            }
-            
-            // Create new user
-            user = new User();
-            user.setEmail(email);
-            user.setGoogleSub(googleSub);
-            user.setEmailVerified(true); // Google verified it
-            user.setFullName(name != null ? name : givenName);
-            user.setUsername(generateUsername(email));
-            user.setPassword(null); // No password for OAuth users
-            user.setRole(Role.USER);
-            user.setIsActive(true);
-            user.setTopicsOfInterest(new ArrayList<>());
-            user.setPreferredLanguages(new ArrayList<>());
+                User existingUser = existingUserByEmail.get();
+                
+                // If the existing user already has a different googleSub, this is a security issue
+                if (existingUser.getGoogleSub() != null && !existingUser.getGoogleSub().equals(googleSub)) {
+                    // Different Google account trying to use same email - reject
+                    throw new OAuth2AuthenticationException(
+                            new OAuth2Error("email_already_registered",
+                                    "An account with this email already exists with a different Google account. Please log in with your password, or contact support if you need to link your Google account.",
+                                    null)
+                    );
+                }
+                
+                // If the existing user has the same googleSub (re-authentication case)
+                // This handles edge cases where findByGoogleSub didn't find the user but findByEmail did
+                if (existingUser.getGoogleSub() != null && existingUser.getGoogleSub().equals(googleSub)) {
+                    // Re-authentication: update existing user (same logic as the if block above)
+                    user = existingUser;
+                    oidcUserProcessingService.updateExistingOidcUser(user, name != null ? name : givenName);
+                    logger.info("Re-authenticated existing OIDC user (found via email lookup): {}", email);
+                }
+                // Check if this is a linking request (user authenticated and has valid linking token)
+                else if (linkingToken != null && existingUser.getGoogleSub() == null) {
+                    GoogleAccountLinkingService.LinkingToken tokenData = linkingService.verifyAndConsumeToken(linkingToken);
+                    if (tokenData != null && tokenData.getEmail().equalsIgnoreCase(email)) {
+                        // Valid linking token - link the Google account
+                        user = existingUser;
+                        // Keep existing password so user can still log in with password
+                        // Keep existing username, role, and other settings
+                        oidcUserProcessingService.linkGoogleAccountToUser(user, googleSub, name != null ? name : givenName);
+                    } else {
+                        // Invalid or expired linking token
+                        throw new OAuth2AuthenticationException(
+                                new OAuth2Error("invalid_linking_token",
+                                        "Invalid or expired linking token. Please try linking your Google account again from your profile settings.",
+                                        null)
+                        );
+                    }
+                } else if (existingUser.getGoogleSub() == null) {
+                    // Email exists but googleSub is null (manually registered account)
+                    // No valid linking token - require explicit linking after password authentication
+                    throw new OAuth2AuthenticationException(
+                            new OAuth2Error("email_already_registered",
+                                    "An account with this email already exists. Please sign in with your password first, then link your Google account from your profile settings.",
+                                    null)
+                    );
+                }
+                // Note: If we reach here and user was set above (re-authentication case), we're done
+            } else {
+                // Create new user
+                user = new User();
+                user.setEmail(email);
+                user.setGoogleSub(googleSub);
+                user.setEmailVerified(true); // Google verified it
+                user.setFullName(name != null ? name : givenName);
+                user.setUsername(generateUsername(email));
+                user.setPassword(null); // No password for OAuth users
+                user.setRole(Role.USER);
+                user.setIsActive(true);
+                user.setTopicsOfInterest(new ArrayList<>());
+                user.setPreferredLanguages(new ArrayList<>());
 
-            userRepository.save(user);
-            logger.info("Created new OIDC user: {}", email);
+                userRepository.save(user);
+                logger.info("Created new OIDC user: {}", email);
+            }
         }
 
         // Return the OIDC user for the authentication to proceed
