@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
-import { User, Course, StudyGroup, ROLE_LABELS, UserRole } from '../types';
+import { User, Course, StudyGroup, ROLE_LABELS, UserRole, SuspendUserRequest, BanUserRequest, DeleteUserRequest, UpdateRoleRequest, UpdateStatusRequest } from '../types';
 import api from '../api/axios';
 import {
   Shield,
@@ -22,10 +22,14 @@ import {
   UserX,
   MoreVertical,
   Loader2,
+  Ban,
+  Clock,
+  Mail,
+  Calendar,
 } from 'lucide-react';
 
 const Admin: React.FC = () => {
-  const { isAdmin } = useAuth();
+  const { isAdmin, user: currentUser } = useAuth();
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<'overview' | 'users' | 'courses' | 'groups'>('overview');
   const [users, setUsers] = useState<User[]>([]);
@@ -34,25 +38,27 @@ const Admin: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [roleFilter, setRoleFilter] = useState<string>('all');
+  const [showDeleted, setShowDeleted] = useState(false);
   
-  // Role change modal
+  // Modals
   const [showRoleModal, setShowRoleModal] = useState(false);
+  const [showSuspendModal, setShowSuspendModal] = useState(false);
+  const [showBanModal, setShowBanModal] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [showStatusModal, setShowStatusModal] = useState(false);
+  
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [newRole, setNewRole] = useState<string>('USER');
+  const [reason, setReason] = useState('');
+  const [suspendDays, setSuspendDays] = useState<number | null>(7);
+  const [actionLoading, setActionLoading] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (!isAdmin) {
-      navigate('/dashboard');
-      return;
-    }
-    fetchData();
-  }, [isAdmin, navigate]);
-
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     setLoading(true);
     try {
       const [usersRes, coursesRes, groupsRes] = await Promise.all([
-        api.get('/admin/users').catch(() => ({ data: [] })),
+        api.get(`/admin/users${showDeleted ? '?includeDeleted=true' : ''}`).catch(() => ({ data: [] })),
         api.get('/courses').catch(() => ({ data: [] })),
         api.get('/groups').catch(() => ({ data: [] })),
       ]);
@@ -64,33 +70,231 @@ const Admin: React.FC = () => {
     } finally {
       setLoading(false);
     }
+  }, [showDeleted]);
+
+  useEffect(() => {
+    if (!isAdmin) {
+      navigate('/dashboard');
+      return;
+    }
+    fetchData();
+  }, [isAdmin, navigate, fetchData]);
+
+  // Helper functions
+  const formatDate = (dateString?: string) => {
+    if (!dateString) return 'Never';
+    const date = new Date(dateString);
+    return date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   };
 
+  const formatRelativeTime = (dateString?: string) => {
+    if (!dateString) return 'Never';
+    const date = new Date(dateString);
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+    
+    if (diffDays === 0) return 'Today';
+    if (diffDays === 1) return 'Yesterday';
+    if (diffDays < 7) return `${diffDays} days ago`;
+    if (diffDays < 30) return `${Math.floor(diffDays / 7)} weeks ago`;
+    return formatDate(dateString);
+  };
+
+  const getUserStatus = (user: User): { label: string; color: string; icon: React.ReactNode } => {
+    if (user.isDeleted) {
+      return { label: 'Deleted', color: 'text-gray-600', icon: <Trash2 className="w-4 h-4" /> };
+    }
+    if (user.bannedAt) {
+      return { label: 'Banned', color: 'text-red-600', icon: <Ban className="w-4 h-4" /> };
+    }
+    if (user.suspendedUntil) {
+      const suspendedUntil = new Date(user.suspendedUntil);
+      if (suspendedUntil > new Date()) {
+        return { label: 'Suspended', color: 'text-orange-600', icon: <Clock className="w-4 h-4" /> };
+      }
+    }
+    if (!user.isActive) {
+      return { label: 'Inactive', color: 'text-gray-600', icon: <XCircle className="w-4 h-4" /> };
+    }
+    return { label: 'Active', color: 'text-green-600', icon: <CheckCircle className="w-4 h-4" /> };
+  };
+
+  // Action handlers
   const handleChangeRole = async () => {
-    if (!selectedUser) return;
+    if (!selectedUser || !reason.trim()) {
+      setErrorMessage('Reason is required');
+      return;
+    }
+    setActionLoading(true);
+    setErrorMessage(null);
     try {
-      await api.put(`/admin/users/${selectedUser.id}/role`, { role: newRole });
+      const request: UpdateRoleRequest = { role: newRole as UserRole, reason };
+      await api.put(`/admin/users/${selectedUser.id}/role`, request);
       setShowRoleModal(false);
       setSelectedUser(null);
-      fetchData(); // Refresh the list
-    } catch (error) {
-      console.error('Failed to change role:', error);
+      setReason('');
+      fetchData();
+    } catch (error: any) {
+      setErrorMessage(error.response?.data?.message || 'Failed to change role');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleSuspend = async () => {
+    if (!selectedUser || !reason.trim()) {
+      setErrorMessage('Reason is required');
+      return;
+    }
+    setActionLoading(true);
+    setErrorMessage(null);
+    try {
+      const request: SuspendUserRequest = { days: suspendDays, reason };
+      await api.post(`/admin/users/${selectedUser.id}/suspend`, request);
+      setShowSuspendModal(false);
+      setSelectedUser(null);
+      setReason('');
+      setSuspendDays(7);
+      fetchData();
+    } catch (error: any) {
+      setErrorMessage(error.response?.data?.message || 'Failed to suspend user');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleBan = async () => {
+    if (!selectedUser || !reason.trim()) {
+      setErrorMessage('Reason is required');
+      return;
+    }
+    setActionLoading(true);
+    setErrorMessage(null);
+    try {
+      const request: BanUserRequest = { reason };
+      await api.post(`/admin/users/${selectedUser.id}/ban`, request);
+      setShowBanModal(false);
+      setSelectedUser(null);
+      setReason('');
+      fetchData();
+    } catch (error: any) {
+      setErrorMessage(error.response?.data?.message || 'Failed to ban user');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleUnban = async (userId: number) => {
+    if (!window.confirm('Are you sure you want to unban this user?')) return;
+    try {
+      await api.post(`/admin/users/${userId}/unban`, { reason: 'Unbanned by admin' });
+      fetchData();
+    } catch (error: any) {
+      alert(error.response?.data?.message || 'Failed to unban user');
+    }
+  };
+
+  const handleUnsuspend = async (userId: number) => {
+    if (!window.confirm('Are you sure you want to remove the suspension from this user?')) return;
+    try {
+      await api.post(`/admin/users/${userId}/unsuspend`, { reason: 'Suspension removed by admin' });
+      fetchData();
+    } catch (error: any) {
+      alert(error.response?.data?.message || 'Failed to unsuspend user');
+    }
+  };
+
+  const handleRestore = async (userId: number) => {
+    if (!window.confirm('Are you sure you want to restore this deleted user?')) return;
+    try {
+      await api.post(`/admin/users/${userId}/restore`, { reason: 'User restored by admin' });
+      fetchData();
+    } catch (error: any) {
+      alert(error.response?.data?.message || 'Failed to restore user');
+    }
+  };
+
+  const handleSoftDelete = async () => {
+    if (!selectedUser || !reason.trim()) {
+      setErrorMessage('Reason is required');
+      return;
+    }
+    setActionLoading(true);
+    setErrorMessage(null);
+    try {
+      const request: DeleteUserRequest = { reason };
+      await api.post(`/admin/users/${selectedUser.id}/soft-delete`, request);
+      setShowDeleteModal(false);
+      setSelectedUser(null);
+      setReason('');
+      fetchData();
+    } catch (error: any) {
+      setErrorMessage(error.response?.data?.message || 'Failed to delete user');
+    } finally {
+      setActionLoading(false);
     }
   };
 
   const handleToggleStatus = async (userId: number, currentStatus: boolean) => {
+    const user = users.find(u => u.id === userId);
+    if (!user) return;
+    
+    setSelectedUser(user);
+    setReason('');
+    setShowStatusModal(true);
+  };
+
+  const handleStatusChange = async () => {
+    if (!selectedUser || !reason.trim()) {
+      setErrorMessage('Reason is required');
+      return;
+    }
+    setActionLoading(true);
+    setErrorMessage(null);
     try {
-      await api.put(`/admin/users/${userId}/status`, { active: !currentStatus });
+      const request: UpdateStatusRequest = { active: !selectedUser.isActive, reason };
+      await api.put(`/admin/users/${selectedUser.id}/status`, request);
+      setShowStatusModal(false);
+      setSelectedUser(null);
+      setReason('');
       fetchData();
-    } catch (error) {
-      console.error('Failed to toggle status:', error);
+    } catch (error: any) {
+      setErrorMessage(error.response?.data?.message || 'Failed to update status');
+    } finally {
+      setActionLoading(false);
     }
   };
 
+  // Modal openers
   const openRoleModal = (u: User) => {
     setSelectedUser(u);
     setNewRole(u.role);
+    setReason('');
+    setErrorMessage(null);
     setShowRoleModal(true);
+  };
+
+  const openSuspendModal = (u: User) => {
+    setSelectedUser(u);
+    setReason('');
+    setSuspendDays(7);
+    setErrorMessage(null);
+    setShowSuspendModal(true);
+  };
+
+  const openBanModal = (u: User) => {
+    setSelectedUser(u);
+    setReason('');
+    setErrorMessage(null);
+    setShowBanModal(true);
+  };
+
+  const openDeleteModal = (u: User) => {
+    setSelectedUser(u);
+    setReason('');
+    setErrorMessage(null);
+    setShowDeleteModal(true);
   };
 
   const stats = [
@@ -299,6 +503,15 @@ const Admin: React.FC = () => {
                   <option value="EXPERT">Experts</option>
                   <option value="ADMIN">Admins</option>
                 </select>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={showDeleted}
+                    onChange={(e) => setShowDeleted(e.target.checked)}
+                    className="w-4 h-4 text-primary-600 rounded"
+                  />
+                  <span className="text-sm text-gray-600">Show Deleted</span>
+                </label>
               </div>
 
               <div className="overflow-x-auto">
@@ -309,67 +522,151 @@ const Admin: React.FC = () => {
                       <th className="text-left py-3 px-4 font-medium text-gray-600">Email</th>
                       <th className="text-left py-3 px-4 font-medium text-gray-600">Role</th>
                       <th className="text-left py-3 px-4 font-medium text-gray-600">Status</th>
+                      <th className="text-left py-3 px-4 font-medium text-gray-600">Last Login</th>
+                      <th className="text-left py-3 px-4 font-medium text-gray-600">Verified</th>
                       <th className="text-left py-3 px-4 font-medium text-gray-600">Actions</th>
                     </tr>
                   </thead>
                   <tbody>
                     {filteredUsers.length === 0 ? (
                       <tr>
-                        <td colSpan={5} className="text-center py-8 text-gray-500">
+                        <td colSpan={7} className="text-center py-8 text-gray-500">
                           No users found
                         </td>
                       </tr>
                     ) : (
-                      filteredUsers.map((u) => (
-                        <tr key={u.id} className="border-b border-gray-100 hover:bg-gray-50">
-                          <td className="py-3 px-4">
-                            <div className="flex items-center gap-3">
-                              <div className="avatar">
-                                {u.fullName?.charAt(0) || u.username.charAt(0)}
+                      filteredUsers.map((u) => {
+                        const status = getUserStatus(u);
+                        const isCurrentUser = currentUser?.id === u.id;
+                        
+                        return (
+                          <tr key={u.id} className="border-b border-gray-100 hover:bg-gray-50">
+                            <td className="py-3 px-4">
+                              <div className="flex items-center gap-3">
+                                <div className="avatar">
+                                  {u.fullName?.charAt(0) || u.username.charAt(0)}
+                                </div>
+                                <div>
+                                  <p className="font-medium text-gray-900">{u.fullName || u.username}</p>
+                                  <p className="text-sm text-gray-500">@{u.username}</p>
+                                </div>
                               </div>
-                              <div>
-                                <p className="font-medium text-gray-900">{u.fullName || u.username}</p>
-                                <p className="text-sm text-gray-500">@{u.username}</p>
-                              </div>
-                            </div>
-                          </td>
-                          <td className="py-3 px-4 text-gray-600">{u.email}</td>
-                          <td className="py-3 px-4">{getRoleBadge(u.role)}</td>
-                          <td className="py-3 px-4">
-                            {u.isActive ? (
-                              <span className="flex items-center gap-1 text-green-600">
-                                <CheckCircle className="w-4 h-4" /> Active
-                              </span>
-                            ) : (
-                              <span className="flex items-center gap-1 text-red-600">
-                                <XCircle className="w-4 h-4" /> Inactive
-                              </span>
-                            )}
-                          </td>
-                          <td className="py-3 px-4">
-                            <div className="flex items-center gap-2">
-                              <button 
-                                onClick={() => openRoleModal(u)}
-                                className="p-2 hover:bg-purple-100 rounded-lg" 
-                                title="Change Role"
-                              >
-                                <Award className="w-4 h-4 text-purple-500" />
-                              </button>
-                              <button 
-                                onClick={() => handleToggleStatus(u.id, u.isActive)}
-                                className={`p-2 rounded-lg ${u.isActive ? 'hover:bg-red-100' : 'hover:bg-green-100'}`}
-                                title={u.isActive ? 'Deactivate' : 'Activate'}
-                              >
-                                {u.isActive ? (
-                                  <UserX className="w-4 h-4 text-red-500" />
-                                ) : (
-                                  <UserCheck className="w-4 h-4 text-green-500" />
+                            </td>
+                            <td className="py-3 px-4 text-gray-600">
+                              <div className="flex items-center gap-2">
+                                {u.email}
+                                {u.isEmailVerified && (
+                                  <CheckCircle className="w-4 h-4 text-green-500" title="Verified" />
                                 )}
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      ))
+                              </div>
+                            </td>
+                            <td className="py-3 px-4">{getRoleBadge(u.role)}</td>
+                            <td className="py-3 px-4">
+                              <span className={`flex items-center gap-1 ${status.color}`}>
+                                {status.icon} {status.label}
+                              </span>
+                            </td>
+                            <td className="py-3 px-4 text-sm text-gray-600">
+                              {formatRelativeTime(u.lastLoginAt)}
+                            </td>
+                            <td className="py-3 px-4">
+                              {u.isEmailVerified ? (
+                                <CheckCircle className="w-5 h-5 text-green-500" />
+                              ) : (
+                                <XCircle className="w-5 h-5 text-gray-400" />
+                              )}
+                            </td>
+                            <td className="py-3 px-4">
+                              <div className="flex items-center gap-2">
+                                <button 
+                                  onClick={() => openRoleModal(u)}
+                                  className="p-2 hover:bg-purple-100 rounded-lg" 
+                                  title="Change Role"
+                                  disabled={isCurrentUser && u.role === 'ADMIN'}
+                                >
+                                  <Award className="w-4 h-4 text-purple-500" />
+                                </button>
+                                
+                                {/* Suspension actions */}
+                                {u.suspendedUntil && new Date(u.suspendedUntil) > new Date() ? (
+                                  <button 
+                                    onClick={() => handleUnsuspend(u.id)}
+                                    className="p-2 hover:bg-green-100 rounded-lg"
+                                    title="Remove Suspension"
+                                  >
+                                    <Clock className="w-4 h-4 text-green-500" />
+                                  </button>
+                                ) : !u.bannedAt && !u.isDeleted ? (
+                                  <button 
+                                    onClick={() => openSuspendModal(u)}
+                                    className="p-2 hover:bg-orange-100 rounded-lg"
+                                    title="Suspend"
+                                    disabled={isCurrentUser}
+                                  >
+                                    <Clock className="w-4 h-4 text-orange-500" />
+                                  </button>
+                                ) : null}
+                                
+                                {/* Ban actions */}
+                                {u.bannedAt ? (
+                                  <button 
+                                    onClick={() => handleUnban(u.id)}
+                                    className="p-2 hover:bg-green-100 rounded-lg"
+                                    title="Unban"
+                                  >
+                                    <Ban className="w-4 h-4 text-green-500" />
+                                  </button>
+                                ) : !u.isDeleted ? (
+                                  <button 
+                                    onClick={() => openBanModal(u)}
+                                    className="p-2 hover:bg-red-100 rounded-lg"
+                                    title="Ban"
+                                    disabled={isCurrentUser}
+                                  >
+                                    <Ban className="w-4 h-4 text-red-500" />
+                                  </button>
+                                ) : null}
+                                
+                                {/* Login status toggle */}
+                                {!u.isDeleted && (
+                                  <button 
+                                    onClick={() => handleToggleStatus(u.id, u.isActive)}
+                                    className={`p-2 rounded-lg ${u.isActive ? 'hover:bg-red-100' : 'hover:bg-green-100'}`}
+                                    title={u.isActive ? 'Disable Login' : 'Enable Login'}
+                                    disabled={isCurrentUser}
+                                  >
+                                    {u.isActive ? (
+                                      <UserX className="w-4 h-4 text-red-500" />
+                                    ) : (
+                                      <UserCheck className="w-4 h-4 text-green-500" />
+                                    )}
+                                  </button>
+                                )}
+                                
+                                {/* Delete/Restore actions */}
+                                {u.isDeleted ? (
+                                  <button 
+                                    onClick={() => handleRestore(u.id)}
+                                    className="p-2 hover:bg-green-100 rounded-lg"
+                                    title="Restore User"
+                                  >
+                                    <UserCheck className="w-4 h-4 text-green-500" />
+                                  </button>
+                                ) : (
+                                  <button 
+                                    onClick={() => openDeleteModal(u)}
+                                    className="p-2 hover:bg-red-100 rounded-lg"
+                                    title="Delete"
+                                    disabled={isCurrentUser}
+                                  >
+                                    <Trash2 className="w-4 h-4 text-red-500" />
+                                  </button>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })
                     )}
                   </tbody>
                 </table>
@@ -519,6 +816,23 @@ const Admin: React.FC = () => {
                   <option value="ADMIN">Admin</option>
                 </select>
               </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Reason <span className="text-red-500">*</span>
+                </label>
+                <textarea
+                  value={reason}
+                  onChange={(e) => setReason(e.target.value)}
+                  placeholder="Enter reason for role change..."
+                  className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                  rows={3}
+                />
+              </div>
+              {errorMessage && (
+                <div className="bg-red-50 border border-red-200 rounded-xl p-4">
+                  <p className="text-sm text-red-800">{errorMessage}</p>
+                </div>
+              )}
               <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-4">
                 <p className="text-sm text-yellow-800">
                   <strong>Note:</strong> Changing a user to Expert role will allow them to create sessions, answer questions, and be listed in the expert directory.
@@ -527,16 +841,315 @@ const Admin: React.FC = () => {
             </div>
             <div className="p-6 border-t border-gray-100 flex justify-end gap-3">
               <button
-                onClick={() => setShowRoleModal(false)}
+                onClick={() => {
+                  setShowRoleModal(false);
+                  setReason('');
+                  setErrorMessage(null);
+                }}
                 className="px-6 py-2 text-gray-600 hover:bg-gray-100 rounded-xl transition-colors"
+                disabled={actionLoading}
               >
                 Cancel
               </button>
               <button
                 onClick={handleChangeRole}
-                className="px-6 py-2 bg-purple-600 text-white rounded-xl hover:bg-purple-700 transition-colors"
+                disabled={actionLoading}
+                className="px-6 py-2 bg-purple-600 text-white rounded-xl hover:bg-purple-700 transition-colors disabled:opacity-50"
               >
-                Update Role
+                {actionLoading ? 'Updating...' : 'Update Role'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Suspend User Modal */}
+      {showSuspendModal && selectedUser && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl w-full max-w-md">
+            <div className="p-6 border-b border-gray-100 flex justify-between items-center">
+              <h2 className="text-xl font-bold text-gray-900">Suspend User</h2>
+              <button onClick={() => {
+                setShowSuspendModal(false);
+                setReason('');
+                setErrorMessage(null);
+              }} className="text-gray-400 hover:text-gray-600">
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+            <div className="p-6 space-y-4">
+              <div className="flex items-center gap-3 bg-gray-50 p-4 rounded-xl">
+                <div className="avatar">
+                  {selectedUser.fullName?.charAt(0) || selectedUser.username.charAt(0)}
+                </div>
+                <div>
+                  <p className="font-medium text-gray-900">{selectedUser.fullName || selectedUser.username}</p>
+                  <p className="text-sm text-gray-500">@{selectedUser.username}</p>
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Suspension Duration</label>
+                <select
+                  value={suspendDays || ''}
+                  onChange={(e) => setSuspendDays(e.target.value ? parseInt(e.target.value) : null)}
+                  className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-orange-500"
+                >
+                  <option value="1">1 day</option>
+                  <option value="7">7 days</option>
+                  <option value="30">30 days</option>
+                  <option value="">Indefinite</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Reason <span className="text-red-500">*</span>
+                </label>
+                <textarea
+                  value={reason}
+                  onChange={(e) => setReason(e.target.value)}
+                  placeholder="Enter reason for suspension..."
+                  className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-orange-500"
+                  rows={3}
+                />
+              </div>
+              {errorMessage && (
+                <div className="bg-red-50 border border-red-200 rounded-xl p-4">
+                  <p className="text-sm text-red-800">{errorMessage}</p>
+                </div>
+              )}
+            </div>
+            <div className="p-6 border-t border-gray-100 flex justify-end gap-3">
+              <button
+                onClick={() => {
+                  setShowSuspendModal(false);
+                  setReason('');
+                  setErrorMessage(null);
+                }}
+                className="px-6 py-2 text-gray-600 hover:bg-gray-100 rounded-xl transition-colors"
+                disabled={actionLoading}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSuspend}
+                disabled={actionLoading}
+                className="px-6 py-2 bg-orange-600 text-white rounded-xl hover:bg-orange-700 transition-colors disabled:opacity-50"
+              >
+                {actionLoading ? 'Suspending...' : 'Suspend User'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Ban User Modal */}
+      {showBanModal && selectedUser && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl w-full max-w-md">
+            <div className="p-6 border-b border-gray-100 flex justify-between items-center">
+              <h2 className="text-xl font-bold text-gray-900">Ban User</h2>
+              <button onClick={() => {
+                setShowBanModal(false);
+                setReason('');
+                setErrorMessage(null);
+              }} className="text-gray-400 hover:text-gray-600">
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+            <div className="p-6 space-y-4">
+              <div className="flex items-center gap-3 bg-gray-50 p-4 rounded-xl">
+                <div className="avatar">
+                  {selectedUser.fullName?.charAt(0) || selectedUser.username.charAt(0)}
+                </div>
+                <div>
+                  <p className="font-medium text-gray-900">{selectedUser.fullName || selectedUser.username}</p>
+                  <p className="text-sm text-gray-500">@{selectedUser.username}</p>
+                </div>
+              </div>
+              <div className="bg-red-50 border border-red-200 rounded-xl p-4">
+                <p className="text-sm text-red-800">
+                  <strong>Warning:</strong> This will permanently ban the user from logging in. This action can be reversed by unbanning the user.
+                </p>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Reason <span className="text-red-500">*</span>
+                </label>
+                <textarea
+                  value={reason}
+                  onChange={(e) => setReason(e.target.value)}
+                  placeholder="Enter reason for ban..."
+                  className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-red-500"
+                  rows={3}
+                />
+              </div>
+              {errorMessage && (
+                <div className="bg-red-50 border border-red-200 rounded-xl p-4">
+                  <p className="text-sm text-red-800">{errorMessage}</p>
+                </div>
+              )}
+            </div>
+            <div className="p-6 border-t border-gray-100 flex justify-end gap-3">
+              <button
+                onClick={() => {
+                  setShowBanModal(false);
+                  setReason('');
+                  setErrorMessage(null);
+                }}
+                className="px-6 py-2 text-gray-600 hover:bg-gray-100 rounded-xl transition-colors"
+                disabled={actionLoading}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleBan}
+                disabled={actionLoading}
+                className="px-6 py-2 bg-red-600 text-white rounded-xl hover:bg-red-700 transition-colors disabled:opacity-50"
+              >
+                {actionLoading ? 'Banning...' : 'Ban User'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete User Modal */}
+      {showDeleteModal && selectedUser && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl w-full max-w-md">
+            <div className="p-6 border-b border-gray-100 flex justify-between items-center">
+              <h2 className="text-xl font-bold text-gray-900">Delete User</h2>
+              <button onClick={() => {
+                setShowDeleteModal(false);
+                setReason('');
+                setErrorMessage(null);
+              }} className="text-gray-400 hover:text-gray-600">
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+            <div className="p-6 space-y-4">
+              <div className="flex items-center gap-3 bg-gray-50 p-4 rounded-xl">
+                <div className="avatar">
+                  {selectedUser.fullName?.charAt(0) || selectedUser.username.charAt(0)}
+                </div>
+                <div>
+                  <p className="font-medium text-gray-900">{selectedUser.fullName || selectedUser.username}</p>
+                  <p className="text-sm text-gray-500">@{selectedUser.username}</p>
+                </div>
+              </div>
+              <div className="bg-red-50 border border-red-200 rounded-xl p-4">
+                <p className="text-sm text-red-800">
+                  <strong>Warning:</strong> This will soft delete the user. The user will be hidden from the system but data will be preserved. Permanent deletion can only be done after 30 days.
+                </p>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Reason <span className="text-red-500">*</span>
+                </label>
+                <textarea
+                  value={reason}
+                  onChange={(e) => setReason(e.target.value)}
+                  placeholder="Enter reason for deletion..."
+                  className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-red-500"
+                  rows={3}
+                />
+              </div>
+              {errorMessage && (
+                <div className="bg-red-50 border border-red-200 rounded-xl p-4">
+                  <p className="text-sm text-red-800">{errorMessage}</p>
+                </div>
+              )}
+            </div>
+            <div className="p-6 border-t border-gray-100 flex justify-end gap-3">
+              <button
+                onClick={() => {
+                  setShowDeleteModal(false);
+                  setReason('');
+                  setErrorMessage(null);
+                }}
+                className="px-6 py-2 text-gray-600 hover:bg-gray-100 rounded-xl transition-colors"
+                disabled={actionLoading}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSoftDelete}
+                disabled={actionLoading}
+                className="px-6 py-2 bg-red-600 text-white rounded-xl hover:bg-red-700 transition-colors disabled:opacity-50"
+              >
+                {actionLoading ? 'Deleting...' : 'Delete User'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Status Change Modal */}
+      {showStatusModal && selectedUser && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl w-full max-w-md">
+            <div className="p-6 border-b border-gray-100 flex justify-between items-center">
+              <h2 className="text-xl font-bold text-gray-900">
+                {selectedUser.isActive ? 'Disable Login' : 'Enable Login'}
+              </h2>
+              <button onClick={() => {
+                setShowStatusModal(false);
+                setReason('');
+                setErrorMessage(null);
+              }} className="text-gray-400 hover:text-gray-600">
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+            <div className="p-6 space-y-4">
+              <div className="flex items-center gap-3 bg-gray-50 p-4 rounded-xl">
+                <div className="avatar">
+                  {selectedUser.fullName?.charAt(0) || selectedUser.username.charAt(0)}
+                </div>
+                <div>
+                  <p className="font-medium text-gray-900">{selectedUser.fullName || selectedUser.username}</p>
+                  <p className="text-sm text-gray-500">@{selectedUser.username}</p>
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Reason <span className="text-red-500">*</span>
+                </label>
+                <textarea
+                  value={reason}
+                  onChange={(e) => setReason(e.target.value)}
+                  placeholder={`Enter reason for ${selectedUser.isActive ? 'disabling' : 'enabling'} login...`}
+                  className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-primary-500"
+                  rows={3}
+                />
+              </div>
+              {errorMessage && (
+                <div className="bg-red-50 border border-red-200 rounded-xl p-4">
+                  <p className="text-sm text-red-800">{errorMessage}</p>
+                </div>
+              )}
+            </div>
+            <div className="p-6 border-t border-gray-100 flex justify-end gap-3">
+              <button
+                onClick={() => {
+                  setShowStatusModal(false);
+                  setReason('');
+                  setErrorMessage(null);
+                }}
+                className="px-6 py-2 text-gray-600 hover:bg-gray-100 rounded-xl transition-colors"
+                disabled={actionLoading}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleStatusChange}
+                disabled={actionLoading}
+                className={`px-6 py-2 rounded-xl transition-colors disabled:opacity-50 ${
+                  selectedUser.isActive
+                    ? 'bg-red-600 text-white hover:bg-red-700'
+                    : 'bg-green-600 text-white hover:bg-green-700'
+                }`}
+              >
+                {actionLoading ? 'Updating...' : selectedUser.isActive ? 'Disable Login' : 'Enable Login'}
               </button>
             </div>
           </div>
