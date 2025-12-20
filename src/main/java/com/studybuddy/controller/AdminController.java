@@ -143,6 +143,10 @@ public class AdminController {
     @PutMapping("/users/{id}/role")
     public ResponseEntity<?> updateUserRole(@PathVariable Long id, @RequestBody RoleUpdateRequest request) {
         try {
+            if (request.getRole() == null || request.getRole().trim().isEmpty()) {
+                return ResponseEntity.badRequest()
+                        .body(new AuthDto.MessageResponse("Role cannot be null or empty", false));
+            }
             Role newRole = Role.valueOf(request.getRole().toUpperCase());
             adminService.updateUserRole(id, newRole, request.getReason());
             return ResponseEntity.ok(new AuthDto.MessageResponse(

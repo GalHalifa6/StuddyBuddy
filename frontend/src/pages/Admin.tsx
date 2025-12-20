@@ -192,8 +192,9 @@ const Admin: React.FC = () => {
       return { label: 'Banned', color: 'text-red-600', icon: <Ban className="w-4 h-4" /> };
     }
     if (user.suspendedUntil) {
+      const now = new Date();
       const suspendedUntil = new Date(user.suspendedUntil);
-      if (suspendedUntil > new Date()) {
+      if (suspendedUntil >= now) {
         return { label: 'Suspended', color: 'text-orange-600', icon: <Clock className="w-4 h-4" /> };
       }
     }
@@ -632,6 +633,9 @@ const Admin: React.FC = () => {
   const [lastLoginFilter, setLastLoginFilter] = useState<string>('all');
 
   const filteredUsers = users.filter(u => {
+    // Create a single "now" Date object for consistent comparisons
+    const now = new Date();
+    
     // Search filter
     const matchesSearch = u.username.toLowerCase().includes(searchTerm.toLowerCase()) ||
                          u.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -647,7 +651,6 @@ const Admin: React.FC = () => {
       if (u.isDeleted) {
         matchesActivity = false;
       } else {
-        const now = new Date();
         const lastLogin = u.lastLoginAt ? new Date(u.lastLoginAt) : null;
         const daysSinceLogin = lastLogin ? Math.floor((now.getTime() - lastLogin.getTime()) / (1000 * 60 * 60 * 24)) : Infinity;
         
@@ -673,10 +676,10 @@ const Admin: React.FC = () => {
     if (statusFilter !== 'all') {
       switch (statusFilter) {
         case 'active':
-          matchesStatus = !u.isDeleted && !u.bannedAt && (!u.suspendedUntil || new Date(u.suspendedUntil) <= new Date()) && u.isActive;
+          matchesStatus = !u.isDeleted && !u.bannedAt && (!u.suspendedUntil || new Date(u.suspendedUntil) <= now) && u.isActive;
           break;
         case 'suspended':
-          matchesStatus = u.suspendedUntil && new Date(u.suspendedUntil) >= new Date();
+          matchesStatus = u.suspendedUntil && new Date(u.suspendedUntil) >= now;
           break;
         case 'banned':
           matchesStatus = u.bannedAt !== null && u.bannedAt !== undefined;
@@ -694,7 +697,6 @@ const Admin: React.FC = () => {
     let matchesRegistrationDate = true;
     if (registrationDateFilter !== 'all' && u.createdAt) {
       const created = new Date(u.createdAt);
-      const now = new Date();
       const daysSinceRegistration = Math.floor((now.getTime() - created.getTime()) / (1000 * 60 * 60 * 24));
       
       switch (registrationDateFilter) {
@@ -719,7 +721,6 @@ const Admin: React.FC = () => {
       } else if (u.lastLoginAt) {
         // For other filters, user must have a lastLoginAt
         const lastLogin = new Date(u.lastLoginAt);
-        const now = new Date();
         const daysSinceLogin = Math.floor((now.getTime() - lastLogin.getTime()) / (1000 * 60 * 60 * 24));
         
         switch (lastLoginFilter) {
