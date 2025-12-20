@@ -141,11 +141,11 @@ const Admin: React.FC = () => {
         setFetchError(errors.join('; '));
       }
       
-      setUsers((usersRes.data || usersRes.response?.data) || []);
-      setCourses((coursesRes.data || coursesRes.response?.data) || []);
-      setGroups((groupsRes.data || groupsRes.response?.data) || []);
-      setStats(statsRes.data || statsRes.response?.data);
-      setRecentActivity((activityRes.data || activityRes.response?.data) || []);
+      setUsers(usersRes.data || []);
+      setCourses(coursesRes.data || []);
+      setGroups(groupsRes.data || []);
+      setStats(statsRes.data || null);
+      setRecentActivity(activityRes.data || []);
     } catch (error: any) {
       console.error('Error fetching admin data:', error);
       setFetchError(error.response?.data?.message || error.message || 'Failed to load admin data');
@@ -634,31 +634,36 @@ const Admin: React.FC = () => {
     // Search filter
     const matchesSearch = u.username.toLowerCase().includes(searchTerm.toLowerCase()) ||
                          u.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         (u.fullName?.toLowerCase().includes(searchTerm.toLowerCase()));
+                         (u.fullName?.toLowerCase().includes(searchTerm.toLowerCase()) ?? false);
     
     // Role filter
     const matchesRole = roleFilter === 'all' || u.role === roleFilter;
     
     // Activity filter
     let matchesActivity = true;
-    if (activityFilter !== 'all' && !u.isDeleted) {
-      const now = new Date();
-      const lastLogin = u.lastLoginAt ? new Date(u.lastLoginAt) : null;
-      const daysSinceLogin = lastLogin ? Math.floor((now.getTime() - lastLogin.getTime()) / (1000 * 60 * 60 * 24)) : Infinity;
-      
-      switch (activityFilter) {
-        case 'active':
-          matchesActivity = lastLogin !== null && daysSinceLogin < 7;
-          break;
-        case 'inactive':
-          matchesActivity = lastLogin !== null && daysSinceLogin >= 7 && daysSinceLogin <= 30;
-          break;
-        case 'dormant':
-          matchesActivity = lastLogin !== null && daysSinceLogin > 30;
-          break;
-        case 'never':
-          matchesActivity = lastLogin === null;
-          break;
+    if (activityFilter !== 'all') {
+      // Deleted users should not match any activity filter (they're handled by status filter)
+      if (u.isDeleted) {
+        matchesActivity = false;
+      } else {
+        const now = new Date();
+        const lastLogin = u.lastLoginAt ? new Date(u.lastLoginAt) : null;
+        const daysSinceLogin = lastLogin ? Math.floor((now.getTime() - lastLogin.getTime()) / (1000 * 60 * 60 * 24)) : Infinity;
+        
+        switch (activityFilter) {
+          case 'active':
+            matchesActivity = lastLogin !== null && daysSinceLogin < 7;
+            break;
+          case 'inactive':
+            matchesActivity = lastLogin !== null && daysSinceLogin >= 7 && daysSinceLogin <= 30;
+            break;
+          case 'dormant':
+            matchesActivity = lastLogin !== null && daysSinceLogin > 30;
+            break;
+          case 'never':
+            matchesActivity = lastLogin === null;
+            break;
+        }
       }
     }
     
@@ -667,7 +672,7 @@ const Admin: React.FC = () => {
     if (statusFilter !== 'all') {
       switch (statusFilter) {
         case 'active':
-          matchesStatus = !u.isDeleted && !u.bannedAt && (!u.suspendedUntil || new Date(u.suspendedUntil) < new Date()) && u.isActive;
+          matchesStatus = !u.isDeleted && !u.bannedAt && (!u.suspendedUntil || new Date(u.suspendedUntil) <= new Date()) && u.isActive;
           break;
         case 'suspended':
           matchesStatus = u.suspendedUntil && new Date(u.suspendedUntil) > new Date();
@@ -706,27 +711,31 @@ const Admin: React.FC = () => {
     
     // Last login filter
     let matchesLastLogin = true;
-    if (lastLoginFilter !== 'all' && u.lastLoginAt) {
-      const lastLogin = new Date(u.lastLoginAt);
-      const now = new Date();
-      const daysSinceLogin = Math.floor((now.getTime() - lastLogin.getTime()) / (1000 * 60 * 60 * 24));
-      
-      switch (lastLoginFilter) {
-        case 'last24h':
-          matchesLastLogin = daysSinceLogin === 0;
-          break;
-        case 'lastWeek':
-          matchesLastLogin = daysSinceLogin <= 7;
-          break;
-        case 'lastMonth':
-          matchesLastLogin = daysSinceLogin <= 30;
-          break;
-        case 'never':
-          matchesLastLogin = false; // This will be handled by activity filter
-          break;
+    if (lastLoginFilter !== 'all') {
+      if (lastLoginFilter === 'never') {
+        // 'never' filter: only match users with no lastLoginAt
+        matchesLastLogin = !u.lastLoginAt;
+      } else if (u.lastLoginAt) {
+        // For other filters, user must have a lastLoginAt
+        const lastLogin = new Date(u.lastLoginAt);
+        const now = new Date();
+        const daysSinceLogin = Math.floor((now.getTime() - lastLogin.getTime()) / (1000 * 60 * 60 * 24));
+        
+        switch (lastLoginFilter) {
+          case 'last24h':
+            matchesLastLogin = daysSinceLogin === 0;
+            break;
+          case 'lastWeek':
+            matchesLastLogin = daysSinceLogin <= 7;
+            break;
+          case 'lastMonth':
+            matchesLastLogin = daysSinceLogin <= 30;
+            break;
+        }
+      } else {
+        // User has no lastLoginAt but filter is not 'never'
+        matchesLastLogin = false;
       }
-    } else if (lastLoginFilter === 'never') {
-      matchesLastLogin = !u.lastLoginAt;
     }
     
     return matchesSearch && matchesRole && matchesActivity && matchesStatus && matchesRegistrationDate && matchesLastLogin;
@@ -922,9 +931,10 @@ const Admin: React.FC = () => {
                                          activity.color === 'purple' ? 'text-purple-500' : 'text-gray-500';
                         
                         // Parse message to extract the bold part
-                        const parts = activity.message.split(': ');
-                        const label = parts[0];
-                        const value = parts[1] || '';
+                        // Use indexOf to handle cases where the value contains ': '
+                        const colonIndex = activity.message.indexOf(': ');
+                        const label = colonIndex !== -1 ? activity.message.substring(0, colonIndex) : activity.message;
+                        const value = colonIndex !== -1 ? activity.message.substring(colonIndex + 2) : '';
                         
                         return (
                           <div key={index} className="flex items-center gap-3 text-sm">

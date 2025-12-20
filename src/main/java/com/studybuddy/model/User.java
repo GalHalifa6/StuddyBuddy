@@ -116,7 +116,8 @@ public class User {
     
     // Helper methods for account status
     public boolean isSuspended() {
-        return suspendedUntil != null && suspendedUntil.isAfter(LocalDateTime.now());
+        // Use !isBefore to make the check inclusive: suspended until exactly now is still suspended
+        return suspendedUntil != null && !suspendedUntil.isBefore(LocalDateTime.now());
     }
     
     public boolean isBanned() {

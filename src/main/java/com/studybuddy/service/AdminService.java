@@ -1,5 +1,7 @@
 package com.studybuddy.service;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.studybuddy.model.AdminAuditLog;
 import com.studybuddy.model.Course;
 import com.studybuddy.model.Role;
@@ -38,6 +40,8 @@ public class AdminService {
     @Autowired
     private AdminAuditLogRepository auditLogRepository;
 
+    private final ObjectMapper objectMapper = new ObjectMapper();
+
     /**
      * Get current admin user from security context
      */
@@ -65,8 +69,11 @@ public class AdminService {
                 .orElseThrow(() -> new RuntimeException("User not found"));
         
         if (targetUser.getRole() == Role.ADMIN) {
+            // Count functional admins (not deleted and not banned)
             long adminCount = userRepository.findAll().stream()
-                    .filter(u -> u.getRole() == Role.ADMIN && !u.getIsDeleted())
+                    .filter(u -> u.getRole() == Role.ADMIN 
+                            && !Boolean.TRUE.equals(u.getIsDeleted())
+                            && u.getBannedAt() == null)
                     .count();
             
             if (adminCount <= 1) {
@@ -88,8 +95,13 @@ public class AdminService {
         log.setReason(reason);
         
         if (metadata != null && !metadata.isEmpty()) {
-            // Simple JSON-like string (for MVP, can use proper JSON library later)
-            log.setMetadata(metadata.toString());
+            try {
+                // Serialize metadata to valid JSON format
+                log.setMetadata(objectMapper.writeValueAsString(metadata));
+            } catch (JsonProcessingException e) {
+                // Fallback to string representation if JSON serialization fails
+                log.setMetadata(metadata.toString());
+            }
         }
         
         auditLogRepository.save(log);
@@ -107,7 +119,8 @@ public class AdminService {
         
         user.setSuspendedUntil(suspendedUntil);
         user.setSuspensionReason(reason);
-        user.setIsActive(false); // Disable login while suspended
+        // Don't modify isActive - rely on isSuspended() check in canLogin()
+        // This allows automatic re-enablement when suspension expires
         
         User savedUser = userRepository.save(user);
         
@@ -124,6 +137,7 @@ public class AdminService {
     @Transactional
     public User banUser(Long userId, String reason) {
         checkSelfModification(userId, "ban");
+        checkLastAdmin(userId);
         
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new RuntimeException("User not found"));
@@ -141,6 +155,8 @@ public class AdminService {
 
     /**
      * Remove suspension from a user
+     * Only removes suspension flags, does not modify isActive.
+     * If user was disabled via disableLogin(), they remain disabled.
      */
     @Transactional
     public User unsuspendUser(Long userId, String reason) {
@@ -149,10 +165,8 @@ public class AdminService {
         
         user.setSuspendedUntil(null);
         user.setSuspensionReason(null);
-        // Only enable login if not banned
-        if (!user.isBanned()) {
-            user.setIsActive(true);
-        }
+        // Don't modify isActive - let canLogin() check handle the logic
+        // If user was disabled via disableLogin(), they should remain disabled
         
         User savedUser = userRepository.save(user);
         
@@ -163,6 +177,8 @@ public class AdminService {
 
     /**
      * Unban a user
+     * Only removes ban flags, does not modify isActive.
+     * If user was disabled via disableLogin(), they remain disabled.
      */
     @Transactional
     public User unbanUser(Long userId, String reason) {
@@ -171,10 +187,8 @@ public class AdminService {
         
         user.setBannedAt(null);
         user.setBanReason(null);
-        // Only enable login if not suspended
-        if (!user.isSuspended()) {
-            user.setIsActive(true);
-        }
+        // Don't modify isActive - let canLogin() check handle the logic
+        // If user was disabled via disableLogin(), they should remain disabled
         
         User savedUser = userRepository.save(user);
         
@@ -246,8 +260,11 @@ public class AdminService {
             throw new IllegalArgumentException("User must be soft deleted before permanent deletion");
         }
         
-        // Check if soft deleted more than 30 days ago
-        if (user.getDeletedAt() != null && user.getDeletedAt().isAfter(LocalDateTime.now().minusDays(30))) {
+        // Check if soft deleted less than 30 days ago (enforce 30-day grace period)
+        // Allow deletion if deletedAt is at or before 30 days ago (30+ days old)
+        // Prevent deletion if deletedAt is after 30 days ago (less than 30 days old)
+        LocalDateTime thirtyDaysAgo = LocalDateTime.now().minusDays(30);
+        if (user.getDeletedAt() != null && user.getDeletedAt().isAfter(thirtyDaysAgo)) {
             throw new IllegalArgumentException("Cannot permanently delete user until 30 days after soft deletion");
         }
         
@@ -306,7 +323,8 @@ public class AdminService {
 
     /**
      * Enable login
-     * If user is suspended, automatically unsuspend them as well (admin override)
+     * Only sets isActive to true. Does not modify suspension status.
+     * Use unsuspendUser() separately if suspension should be removed.
      */
     @Transactional
     public User enableLogin(Long userId, String reason) {
@@ -318,10 +336,9 @@ public class AdminService {
             throw new IllegalArgumentException("Cannot enable login for banned user. Unban first.");
         }
         
-        // If suspended, automatically unsuspend (admin can override suspension)
+        // Don't enable if suspended - suspension must be removed explicitly
         if (user.isSuspended()) {
-            user.setSuspendedUntil(null);
-            user.setSuspensionReason(null);
+            throw new IllegalArgumentException("Cannot enable login for suspended user. Unsuspend first.");
         }
         
         user.setIsActive(true);

@@ -81,9 +81,7 @@ public class AdminStatsService {
                 .count();
         
         long suspendedUsers = userRepository.findAll().stream()
-                .filter(user -> !user.getIsDeleted() && 
-                        user.getSuspendedUntil() != null &&
-                        user.getSuspendedUntil().isAfter(now))
+                .filter(user -> !user.getIsDeleted() && user.isSuspended())
                 .count();
         
         long bannedUsers = userRepository.findAll().stream()

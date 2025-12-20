@@ -342,11 +342,13 @@ public class AdminController {
         } catch (Exception e) {
             // Fallback: if query fails (e.g., column doesn't exist), get all and filter manually
             courses = courseRepository.findAll();
+            // Always apply filtering in fallback to respect includeArchived parameter
             if (includeArchived == null || !includeArchived) {
                 courses = courses.stream()
                         .filter(c -> c.getIsArchived() == null || !c.getIsArchived())
                         .collect(Collectors.toList());
             }
+            // If includeArchived is true, courses already contains all courses (including archived)
         }
         
         List<Map<String, Object>> result = courses.stream().map(course -> {
