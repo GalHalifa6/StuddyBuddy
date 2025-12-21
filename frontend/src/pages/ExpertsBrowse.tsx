@@ -7,6 +7,9 @@ import {
   AskQuestionRequest,
   CreateReviewRequest,
   ExpertReview,
+  sessionRequestService,
+  CreateSessionRequestPayload,
+  TimeSlot,
 } from '../api/experts';
 import {
   Search,
@@ -23,6 +26,8 @@ import {
   Clock,
   Video,
   ExternalLink,
+  Plus,
+  Trash2,
 } from 'lucide-react';
 
 const ExpertsBrowse: React.FC = () => {
@@ -55,6 +60,16 @@ const ExpertsBrowse: React.FC = () => {
   });
   const [canReviewInfo, setCanReviewInfo] = useState<{ canReview: boolean; hasInteracted: boolean; alreadyReviewed: boolean } | null>(null);
   const [checkingCanReview, setCheckingCanReview] = useState(false);
+  
+  // Session request modal
+  const [showSessionRequestModal, setShowSessionRequestModal] = useState(false);
+  const [sessionRequestForm, setSessionRequestForm] = useState<Partial<CreateSessionRequestPayload>>({
+    title: '',
+    description: '',
+    agenda: '',
+    preferredTimeSlots: [],
+  });
+  const [isSubmittingRequest, setIsSubmittingRequest] = useState(false);
 
   // Get all unique specializations
   const allSpecializations = [...new Set(experts.flatMap(e => e.specializations || []))];
@@ -466,6 +481,24 @@ const ExpertsBrowse: React.FC = () => {
                       <MessageCircle className="w-5 h-5" />
                       Ask a Question
                     </button>
+                    {selectedExpert.offersOneOnOne && (
+                      <button
+                        onClick={() => {
+                          setSessionRequestForm({
+                            title: '',
+                            description: '',
+                            agenda: '',
+                            preferredTimeSlots: [],
+                            expertId: selectedExpert.userId,
+                          });
+                          setShowSessionRequestModal(true);
+                        }}
+                        className="flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors"
+                      >
+                        <Calendar className="w-5 h-5" />
+                        Request Session
+                      </button>
+                    )}
                     <button
                       onClick={handleOpenReviewModal}
                       disabled={checkingCanReview}
@@ -773,6 +806,162 @@ const ExpertsBrowse: React.FC = () => {
                   Submit Review
                 </button>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Session Request Modal */}
+      {showSessionRequestModal && selectedExpert && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+            <div className="p-6 border-b border-gray-100 flex justify-between items-center">
+              <h2 className="text-xl font-bold text-gray-900">Request Session with {selectedExpert.fullName}</h2>
+              <button onClick={() => setShowSessionRequestModal(false)} className="text-gray-400 hover:text-gray-600">
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+            <div className="p-6 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Session Title *</label>
+                <input
+                  type="text"
+                  value={sessionRequestForm.title || ''}
+                  onChange={(e) => setSessionRequestForm({ ...sessionRequestForm, title: e.target.value })}
+                  placeholder="e.g., Python Help Session"
+                  className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Description</label>
+                <textarea
+                  value={sessionRequestForm.description || ''}
+                  onChange={(e) => setSessionRequestForm({ ...sessionRequestForm, description: e.target.value })}
+                  placeholder="What topics would you like to cover?"
+                  rows={3}
+                  className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Agenda (optional)</label>
+                <textarea
+                  value={sessionRequestForm.agenda || ''}
+                  onChange={(e) => setSessionRequestForm({ ...sessionRequestForm, agenda: e.target.value })}
+                  placeholder="Specific points to discuss..."
+                  rows={2}
+                  className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                />
+              </div>
+              <div>
+                <div className="flex justify-between items-center mb-2">
+                  <label className="block text-sm font-medium text-gray-700">Preferred Time Slots *</label>
+                  <button
+                    onClick={() => {
+                      setSessionRequestForm({
+                        ...sessionRequestForm,
+                        preferredTimeSlots: [
+                          ...(sessionRequestForm.preferredTimeSlots || []),
+                          { start: '', end: '' },
+                        ],
+                      });
+                    }}
+                    className="flex items-center gap-1 text-sm text-purple-600 hover:text-purple-700"
+                  >
+                    <Plus className="w-4 h-4" />
+                    Add Time Slot
+                  </button>
+                </div>
+                <div className="space-y-2">
+                  {(sessionRequestForm.preferredTimeSlots || []).map((slot, index) => (
+                    <div key={index} className="flex gap-2 items-center">
+                      <input
+                        type="datetime-local"
+                        value={slot.start ? new Date(slot.start).toISOString().slice(0, 16) : ''}
+                        onChange={(e) => {
+                          const newSlots = [...(sessionRequestForm.preferredTimeSlots || [])];
+                          newSlots[index] = {
+                            ...slot,
+                            start: e.target.value ? new Date(e.target.value).toISOString() : '',
+                          };
+                          setSessionRequestForm({ ...sessionRequestForm, preferredTimeSlots: newSlots });
+                        }}
+                        className="flex-1 px-4 py-2 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                      />
+                      <span className="text-gray-500">to</span>
+                      <input
+                        type="datetime-local"
+                        value={slot.end ? new Date(slot.end).toISOString().slice(0, 16) : ''}
+                        onChange={(e) => {
+                          const newSlots = [...(sessionRequestForm.preferredTimeSlots || [])];
+                          newSlots[index] = {
+                            ...slot,
+                            end: e.target.value ? new Date(e.target.value).toISOString() : '',
+                          };
+                          setSessionRequestForm({ ...sessionRequestForm, preferredTimeSlots: newSlots });
+                        }}
+                        className="flex-1 px-4 py-2 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                      />
+                      <button
+                        onClick={() => {
+                          const newSlots = (sessionRequestForm.preferredTimeSlots || []).filter((_, i) => i !== index);
+                          setSessionRequestForm({ ...sessionRequestForm, preferredTimeSlots: newSlots });
+                        }}
+                        className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  ))}
+                  {(!sessionRequestForm.preferredTimeSlots || sessionRequestForm.preferredTimeSlots.length === 0) && (
+                    <p className="text-sm text-gray-500 italic">Click "Add Time Slot" to add your preferred times</p>
+                  )}
+                </div>
+              </div>
+            </div>
+            <div className="p-6 border-t border-gray-100 flex justify-end gap-3">
+              <button
+                onClick={() => setShowSessionRequestModal(false)}
+                className="px-6 py-2 text-gray-600 hover:bg-gray-100 rounded-xl transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={async () => {
+                  if (!sessionRequestForm.title?.trim() || !sessionRequestForm.preferredTimeSlots?.length) {
+                    alert('Please fill in the title and add at least one preferred time slot');
+                    return;
+                  }
+                  setIsSubmittingRequest(true);
+                  try {
+                    await sessionRequestService.createRequest({
+                      ...sessionRequestForm as CreateSessionRequestPayload,
+                      expertId: selectedExpert.userId,
+                    });
+                    setShowSessionRequestModal(false);
+                    setSessionRequestForm({ title: '', description: '', agenda: '', preferredTimeSlots: [] });
+                    alert('Session request submitted! The expert will be notified and can approve or propose alternative times.');
+                  } catch (error: any) {
+                    console.error('Failed to submit session request:', error);
+                    alert(error.response?.data?.message || 'Failed to submit session request. Please try again.');
+                  } finally {
+                    setIsSubmittingRequest(false);
+                  }
+                }}
+                disabled={isSubmittingRequest || !sessionRequestForm.title?.trim() || !sessionRequestForm.preferredTimeSlots?.length}
+                className="flex items-center gap-2 px-6 py-2 bg-purple-600 text-white rounded-xl hover:bg-purple-700 transition-colors disabled:opacity-50"
+              >
+                {isSubmittingRequest ? (
+                  <>
+                    <div className="animate-spin rounded-full h-4 w-4 border-t-2 border-b-2 border-white"></div>
+                    Submitting...
+                  </>
+                ) : (
+                  <>
+                    <Calendar className="w-4 h-4" />
+                    Submit Request
+                  </>
+                )}
+              </button>
             </div>
           </div>
         </div>

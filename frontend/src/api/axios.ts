@@ -1,10 +1,9 @@
 import axios, { AxiosError, InternalAxiosRequestConfig } from 'axios';
-
-const API_BASE_URL = '/api';
+import { apiBaseWithPrefix } from '@/config/env';
 
 // Create axios instance
 const api = axios.create({
-  baseURL: API_BASE_URL,
+  baseURL: apiBaseWithPrefix,
   headers: {
     'Content-Type': 'application/json',
   },

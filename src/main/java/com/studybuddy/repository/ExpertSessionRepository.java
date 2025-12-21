@@ -2,13 +2,16 @@ package com.studybuddy.repository;
 
 import com.studybuddy.model.ExpertSession;
 import com.studybuddy.model.User;
+import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
 
 @Repository
 public interface ExpertSessionRepository extends JpaRepository<ExpertSession, Long> {
@@ -35,6 +38,10 @@ public interface ExpertSessionRepository extends JpaRepository<ExpertSession, Lo
 
     // Find sessions by course with end time after a given time (active/upcoming)
     List<ExpertSession> findByCourseIdAndScheduledEndTimeAfterOrderByScheduledStartTimeAsc(Long courseId, LocalDateTime endTimeAfter);
+
+    long countByCourseIdAndScheduledEndTimeAfter(Long courseId, LocalDateTime endTimeAfter);
+
+    List<ExpertSession> findByStudentIdAndScheduledStartTimeAfterOrderByScheduledStartTimeAsc(Long studentId, LocalDateTime startTimeAfter);
     
     // Find all sessions with end time after a given time (for browsing)
     List<ExpertSession> findByScheduledEndTimeAfterOrderByScheduledStartTimeAsc(LocalDateTime endTimeAfter);
@@ -89,4 +96,8 @@ public interface ExpertSessionRepository extends JpaRepository<ExpertSession, Lo
 
     @Query("SELECT es.sessionType, COUNT(es) FROM ExpertSession es WHERE es.expert.id = :expertId GROUP BY es.sessionType")
     List<Object[]> getSessionTypeDistribution(@Param("expertId") Long expertId);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT es FROM ExpertSession es WHERE es.id = :id")
+    Optional<ExpertSession> findByIdForUpdate(@Param("id") Long id);
 }

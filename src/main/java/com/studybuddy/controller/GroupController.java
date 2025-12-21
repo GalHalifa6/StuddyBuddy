@@ -4,6 +4,7 @@ import com.studybuddy.model.*;
 import com.studybuddy.repository.*;
 import com.studybuddy.service.NotificationService;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -35,26 +36,55 @@ public class GroupController {
     @Autowired
     private NotificationService notificationService;
 
+    @Autowired
+    private MessageReceiptRepository messageReceiptRepository;
+
     private User getCurrentUser() {
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null || auth.getName() == null || "anonymousUser".equalsIgnoreCase(auth.getName())) {
+            throw new RuntimeException("User not authenticated");
+        }
         return userRepository.findByUsername(auth.getName())
                 .orElseThrow(() -> new RuntimeException("User not found"));
     }
 
     @PostMapping
     public ResponseEntity<?> createGroup(@RequestBody Map<String, Object> request) {
+        User creator;
         try {
-            User creator = getCurrentUser();
+            creator = getCurrentUser();
+        } catch (RuntimeException e) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of(
+                    "message", "Please log in to create a study group"
+            ));
+        }
 
+        try {
             // Extract course ID from the request
-            Map<String, Object> courseMap = (Map<String, Object>) request.get("course");
-            if (courseMap == null || courseMap.get("id") == null) {
+            Object courseValue = request.get("course");
+            if (!(courseValue instanceof Map<?, ?>)) {
                 return ResponseEntity.badRequest().body(Map.of("message", "Course is required"));
             }
-            
-            Long courseId = Long.valueOf(courseMap.get("id").toString());
+
+            Map<?, ?> courseMap = (Map<?, ?>) courseValue;
+            Object courseIdValue = courseMap.get("id");
+            if (courseIdValue == null) {
+                return ResponseEntity.badRequest().body(Map.of("message", "Course is required"));
+            }
+
+            Long courseId = Long.valueOf(courseIdValue.toString());
             Course course = courseRepository.findById(courseId)
                     .orElseThrow(() -> new RuntimeException("Course not found"));
+
+            boolean isAdminOrExpert = creator.getRole() == Role.ADMIN || creator.getRole() == Role.EXPERT;
+            boolean isEnrolledInCourse = creator.getCourses().stream()
+                    .anyMatch(enrolledCourse -> enrolledCourse.getId().equals(courseId));
+
+            if (!isAdminOrExpert && !isEnrolledInCourse) {
+                return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of(
+                        "message", "Enroll in this course before creating a study group"
+                ));
+            }
 
             // Create the study group
             StudyGroup group = new StudyGroup();
@@ -82,9 +112,30 @@ public class GroupController {
             return ResponseEntity.badRequest().body(Map.of("message", "Error creating group: " + e.getMessage()));
         }
     }
-
+        
     @GetMapping("/course/{courseId}")
-    public ResponseEntity<List<Map<String, Object>>> getGroupsByCourse(@PathVariable Long courseId) {
+    public ResponseEntity<?> getGroupsByCourse(@PathVariable Long courseId) {
+        User currentUser;
+        try {
+            currentUser = getCurrentUser();
+        } catch (RuntimeException e) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of(
+                    "message", "Please log in to view study groups"
+            ));
+        }
+        courseRepository.findById(courseId)
+            .orElseThrow(() -> new RuntimeException("Course not found"));
+
+        boolean isAdminOrExpert = currentUser.getRole() == Role.ADMIN || currentUser.getRole() == Role.EXPERT;
+        boolean isEnrolled = currentUser.getCourses().stream()
+                .anyMatch(enrolledCourse -> enrolledCourse.getId().equals(courseId));
+
+        if (!isAdminOrExpert && !isEnrolled) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of(
+                    "message", "You must be enrolled in this course to view its study groups"
+            ));
+        }
+
         List<StudyGroup> groups = groupRepository.findByCourseIdAndIsActiveTrue(courseId);
         
         // Convert to safe response to avoid circular references
@@ -739,9 +790,7 @@ public class GroupController {
         List<Message> recentMessages = messageRepository.findRecentMessagesByGroup(id);
         Message lastMessage = recentMessages.isEmpty() ? null : recentMessages.get(0);
 
-        // For unread count, we would need to track last read timestamp per user
-        // For now, we'll return 0 (this could be enhanced later with a LastRead entity)
-        int unreadCount = 0;
+        long unreadCount = messageReceiptRepository.countUnreadForGroup(currentUser.getId(), id);
 
         Map<String, Object> response = new java.util.HashMap<>();
         
@@ -765,7 +814,7 @@ public class GroupController {
             response.put("lastMessage", null);
         }
         
-        response.put("unreadCount", unreadCount);
+        response.put("unreadCount", (int) unreadCount);
         response.put("totalMessages", recentMessages.size());
 
         return ResponseEntity.ok(response);

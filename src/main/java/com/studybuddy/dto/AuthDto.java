@@ -8,6 +8,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.util.List;
+import java.util.Map;
 
 /**
  * DTOs for Authentication
@@ -32,7 +33,28 @@ public class AuthDto {
 
         private String fullName;
         
-        private String role; // USER, EXPERT, ADMIN
+        private String role; // USER or EXPERT (ADMIN reserved for seed data)
+    }
+
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class QuestionnaireAnswer {
+        private String questionKey;
+        private String answer;
+    }
+
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class OnboardingRequest {
+        private boolean skip;
+        private List<QuestionnaireAnswer> responses;
+        private List<String> topicsOfInterest;
+        private String proficiencyLevel;
+        private List<String> preferredLanguages;
+        private String availability;
+        private String collaborationStyle;
     }
 
     @Data
@@ -103,6 +125,7 @@ public class AuthDto {
         private List<String> preferredLanguages;
         private String availability;
         private String collaborationStyle;
+        private Map<String, String> questionnaireResponses;
     }
 
     @Data
@@ -122,6 +145,9 @@ public class AuthDto {
         private String collaborationStyle;
         private java.time.LocalDateTime createdAt;
         private java.time.LocalDateTime updatedAt;
+        private Map<String, String> questionnaireResponses;
+        private Boolean onboardingCompleted;
+        private java.time.LocalDateTime onboardingCompletedAt;
 
         public static UserResponse fromUser(com.studybuddy.model.User user) {
             return new UserResponse(
@@ -137,7 +163,10 @@ public class AuthDto {
                 user.getAvailability(),
                 user.getCollaborationStyle(),
                 user.getCreatedAt(),
-                user.getUpdatedAt()
+                user.getUpdatedAt(),
+                user.getQuestionnaireResponses(),
+                user.getOnboardingCompleted(),
+                user.getOnboardingCompletedAt()
             );
         }
     }

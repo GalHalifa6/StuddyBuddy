@@ -31,6 +31,9 @@ public class SessionWebSocketController {
 
     @Autowired
     private JwtUtils jwtUtils;
+    
+    @Autowired
+    private com.studybuddy.repository.SessionMessageRepository sessionMessageRepository;
 
     /**
      * Extract user from JWT token in headers
@@ -99,6 +102,21 @@ public class SessionWebSocketController {
             message.put("language", payload.get("language"));
         }
 
+        // Persist the message
+        SessionMessage sessionMessage = SessionMessage.builder()
+            .session(session)
+            .sender(sender)
+            .content((String) payload.get("content"))
+            .messageType((String) payload.getOrDefault("type", "text"))
+            .fileUrl(payload.containsKey("fileUrl") ? (String) payload.get("fileUrl") : null)
+            .fileName(payload.containsKey("fileName") ? (String) payload.get("fileName") : null)
+            .language(payload.containsKey("language") ? (String) payload.get("language") : null)
+            .build();
+        SessionMessage savedMessage = sessionMessageRepository.save(sessionMessage);
+        
+        // Update message ID with database ID
+        message.put("id", savedMessage.getId());
+        
         System.out.println("Broadcasting chat message to /topic/session/" + sessionId + "/chat: " + message);
         
         // Broadcast to all session participants

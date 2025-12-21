@@ -12,6 +12,12 @@ import {
   ExpertReview,
   ExpertProfileRequest,
   CreateSessionRequest,
+  sessionRequestService,
+  SessionRequest,
+  ApproveSessionRequestPayload,
+  RejectSessionRequestPayload,
+  CounterProposeSessionRequestPayload,
+  TimeSlot,
 } from '../api/experts';
 import { userSearchService, UserSearchResult } from '../api/sessions';
 import {
@@ -45,8 +51,21 @@ const ExpertDashboard: React.FC = () => {
   const [questions, setQuestions] = useState<ExpertQuestion[]>([]);
   const [reviews, setReviews] = useState<ExpertReview[]>([]);
   const [courses, setCourses] = useState<Course[]>([]);
+  const [sessionRequests, setSessionRequests] = useState<SessionRequest[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'overview' | 'sessions' | 'questions' | 'reviews' | 'profile'>('overview');
+  
+  // Session request approval modal
+  const [selectedRequest, setSelectedRequest] = useState<SessionRequest | null>(null);
+  const [showApprovalModal, setShowApprovalModal] = useState(false);
+  const [approvalAction, setApprovalAction] = useState<'approve' | 'reject' | 'counter' | null>(null);
+  const [approvalForm, setApprovalForm] = useState<{
+    chosenStart?: string;
+    chosenEnd?: string;
+    message?: string;
+    reason?: string;
+    proposedTimeSlots?: TimeSlot[];
+  }>({});
+  const [activeTab, setActiveTab] = useState<'overview' | 'sessions' | 'questions' | 'reviews' | 'profile' | 'session-requests'>('overview');
   
   // Modal states
   const [showProfileModal, setShowProfileModal] = useState(false);
@@ -97,14 +116,33 @@ const ExpertDashboard: React.FC = () => {
   useEffect(() => {
     loadData();
     loadCourses();
+    loadSessionRequests();
     
     // Auto-refresh data every 30 seconds to catch new reviews/questions
     const refreshInterval = setInterval(() => {
       loadData();
+      if (activeTab === 'session-requests') {
+        loadSessionRequests();
+      }
     }, 30000);
     
     return () => clearInterval(refreshInterval);
   }, []);
+  
+  useEffect(() => {
+    if (activeTab === 'session-requests') {
+      loadSessionRequests();
+    }
+  }, [activeTab]);
+  
+  const loadSessionRequests = async () => {
+    try {
+      const data = await sessionRequestService.getExpertRequests('PENDING');
+      setSessionRequests(data);
+    } catch (error) {
+      console.error('Failed to load session requests:', error);
+    }
+  };
 
   const loadCourses = async () => {
     try {
@@ -514,6 +552,7 @@ const ExpertDashboard: React.FC = () => {
           {[
             { id: 'overview', label: 'Overview' },
             { id: 'sessions', label: 'Sessions' },
+            { id: 'session-requests', label: 'Session Requests' },
             { id: 'questions', label: 'Questions' },
             { id: 'reviews', label: 'Reviews' },
           ].map((tab) => (
@@ -760,6 +799,109 @@ const ExpertDashboard: React.FC = () => {
                 <MessageCircle className="w-16 h-16 mx-auto mb-4 text-gray-300" />
                 <p className="text-lg font-medium">No questions yet</p>
                 <p className="text-sm mt-1">Questions from students will appear here</p>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'session-requests' && (
+        <div className="bg-white rounded-xl border border-gray-100 shadow-sm">
+          <div className="p-4 border-b border-gray-100">
+            <h3 className="font-semibold text-gray-900">Pending Session Requests</h3>
+            <p className="text-sm text-gray-500 mt-1">Review and respond to student session requests</p>
+          </div>
+          <div className="divide-y divide-gray-100">
+            {sessionRequests.length > 0 ? (
+              sessionRequests.map((request) => (
+                <div key={request.id} className="p-4">
+                  <div className="flex items-start justify-between">
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2 mb-2">
+                        <h4 className="font-semibold text-gray-900">{request.title}</h4>
+                        <span className="px-2 py-1 bg-yellow-100 text-yellow-700 rounded-full text-xs font-medium">
+                          PENDING
+                        </span>
+                      </div>
+                      <div className="text-sm text-gray-600 mb-2">
+                        <span className="font-medium">Student:</span> {request.student?.fullName || request.student?.username || 'Unknown'}
+                        {request.course && (
+                          <> • <span className="font-medium">Course:</span> {request.course.code} - {request.course.name}</>
+                        )}
+                      </div>
+                      {request.description && (
+                        <p className="text-sm text-gray-700 mb-2">{request.description}</p>
+                      )}
+                      {request.agenda && (
+                        <div className="mb-2">
+                          <p className="text-xs font-medium text-gray-600 mb-1">Agenda:</p>
+                          <p className="text-xs text-gray-700">{request.agenda}</p>
+                        </div>
+                      )}
+                      {request.preferredTimeSlots && request.preferredTimeSlots.length > 0 && (
+                        <div className="mb-2">
+                          <p className="text-xs font-medium text-gray-600 mb-1">Preferred Times:</p>
+                          <div className="space-y-1">
+                            {request.preferredTimeSlots.map((slot, idx) => (
+                              <div key={idx} className="text-xs text-gray-700 flex items-center gap-1">
+                                <Clock className="w-3 h-3" />
+                                {new Date(slot.start).toLocaleString()} - {new Date(slot.end).toLocaleString()}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      <div className="text-xs text-gray-500 mt-2">
+                        Requested {new Date(request.createdAt).toLocaleString()}
+                      </div>
+                    </div>
+                    <div className="ml-4 flex gap-2">
+                      <button
+                        onClick={() => {
+                          setSelectedRequest(request);
+                          setApprovalAction('approve');
+                          setApprovalForm({
+                            chosenStart: request.preferredTimeSlots?.[0]?.start || '',
+                            chosenEnd: request.preferredTimeSlots?.[0]?.end || '',
+                            message: '',
+                          });
+                          setShowApprovalModal(true);
+                        }}
+                        className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm"
+                      >
+                        Approve
+                      </button>
+                      <button
+                        onClick={() => {
+                          setSelectedRequest(request);
+                          setApprovalAction('reject');
+                          setApprovalForm({ reason: '' });
+                          setShowApprovalModal(true);
+                        }}
+                        className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors text-sm"
+                      >
+                        Reject
+                      </button>
+                      <button
+                        onClick={() => {
+                          setSelectedRequest(request);
+                          setApprovalAction('counter');
+                          setApprovalForm({ proposedTimeSlots: [], message: '' });
+                          setShowApprovalModal(true);
+                        }}
+                        className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm"
+                      >
+                        Counter
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))
+            ) : (
+              <div className="p-12 text-center text-gray-500">
+                <Calendar className="w-16 h-16 mx-auto mb-4 text-gray-300" />
+                <p className="text-lg font-medium">No pending requests</p>
+                <p className="text-sm mt-1">Session requests from students will appear here</p>
               </div>
             )}
           </div>
@@ -1340,6 +1482,197 @@ const ExpertDashboard: React.FC = () => {
               >
                 <Send className="w-4 h-4" />
                 Submit Answer
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Session Request Approval Modal */}
+      {showApprovalModal && selectedRequest && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+            <div className="p-6 border-b border-gray-100 flex justify-between items-center">
+              <h2 className="text-xl font-bold text-gray-900">
+                {approvalAction === 'approve' && 'Approve Session Request'}
+                {approvalAction === 'reject' && 'Reject Session Request'}
+                {approvalAction === 'counter' && 'Counter-Propose Session Time'}
+              </h2>
+              <button onClick={() => setShowApprovalModal(false)} className="text-gray-400 hover:text-gray-600">
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+            <div className="p-6 space-y-4">
+              {approvalAction === 'approve' && (
+                <>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Session Start Time *</label>
+                    <input
+                      type="datetime-local"
+                      value={approvalForm.chosenStart ? new Date(approvalForm.chosenStart).toISOString().slice(0, 16) : ''}
+                      onChange={(e) => setApprovalForm({ ...approvalForm, chosenStart: e.target.value ? new Date(e.target.value).toISOString() : '' })}
+                      className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Session End Time *</label>
+                    <input
+                      type="datetime-local"
+                      value={approvalForm.chosenEnd ? new Date(approvalForm.chosenEnd).toISOString().slice(0, 16) : ''}
+                      onChange={(e) => setApprovalForm({ ...approvalForm, chosenEnd: e.target.value ? new Date(e.target.value).toISOString() : '' })}
+                      className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Message (optional)</label>
+                    <textarea
+                      value={approvalForm.message || ''}
+                      onChange={(e) => setApprovalForm({ ...approvalForm, message: e.target.value })}
+                      placeholder="Add a message to the student..."
+                      rows={3}
+                      className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                    />
+                  </div>
+                </>
+              )}
+              {approvalAction === 'reject' && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Rejection Reason *</label>
+                  <textarea
+                    value={approvalForm.reason || ''}
+                    onChange={(e) => setApprovalForm({ ...approvalForm, reason: e.target.value })}
+                    placeholder="Please provide a reason for rejection..."
+                    rows={4}
+                    className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                  />
+                </div>
+              )}
+              {approvalAction === 'counter' && (
+                <>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Proposed Time Slots *</label>
+                    <div className="space-y-2">
+                      {(approvalForm.proposedTimeSlots || []).map((slot, index) => (
+                        <div key={index} className="flex gap-2 items-center">
+                          <input
+                            type="datetime-local"
+                            value={slot.start ? new Date(slot.start).toISOString().slice(0, 16) : ''}
+                            onChange={(e) => {
+                              const newSlots = [...(approvalForm.proposedTimeSlots || [])];
+                              newSlots[index] = { ...slot, start: e.target.value ? new Date(e.target.value).toISOString() : '' };
+                              setApprovalForm({ ...approvalForm, proposedTimeSlots: newSlots });
+                            }}
+                            className="flex-1 px-4 py-2 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                          />
+                          <span className="text-gray-500">to</span>
+                          <input
+                            type="datetime-local"
+                            value={slot.end ? new Date(slot.end).toISOString().slice(0, 16) : ''}
+                            onChange={(e) => {
+                              const newSlots = [...(approvalForm.proposedTimeSlots || [])];
+                              newSlots[index] = { ...slot, end: e.target.value ? new Date(e.target.value).toISOString() : '' };
+                              setApprovalForm({ ...approvalForm, proposedTimeSlots: newSlots });
+                            }}
+                            className="flex-1 px-4 py-2 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                          />
+                          <button
+                            onClick={() => {
+                              const newSlots = (approvalForm.proposedTimeSlots || []).filter((_, i) => i !== index);
+                              setApprovalForm({ ...approvalForm, proposedTimeSlots: newSlots });
+                            }}
+                            className="p-2 text-red-500 hover:bg-red-50 rounded-lg"
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
+                        </div>
+                      ))}
+                      <button
+                        onClick={() => {
+                          setApprovalForm({
+                            ...approvalForm,
+                            proposedTimeSlots: [...(approvalForm.proposedTimeSlots || []), { start: '', end: '' }],
+                          });
+                        }}
+                        className="flex items-center gap-1 text-sm text-purple-600 hover:text-purple-700"
+                      >
+                        <Plus className="w-4 h-4" />
+                        Add Time Slot
+                      </button>
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Message (optional)</label>
+                    <textarea
+                      value={approvalForm.message || ''}
+                      onChange={(e) => setApprovalForm({ ...approvalForm, message: e.target.value })}
+                      placeholder="Add a message to the student..."
+                      rows={3}
+                      className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                    />
+                  </div>
+                </>
+              )}
+            </div>
+            <div className="p-6 border-t border-gray-100 flex justify-end gap-3">
+              <button
+                onClick={() => setShowApprovalModal(false)}
+                className="px-6 py-2 text-gray-600 hover:bg-gray-100 rounded-xl transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={async () => {
+                  try {
+                    if (approvalAction === 'approve') {
+                      if (!approvalForm.chosenStart || !approvalForm.chosenEnd) {
+                        alert('Please select start and end times');
+                        return;
+                      }
+                      await sessionRequestService.approveRequest(selectedRequest.id, {
+                        chosenStart: approvalForm.chosenStart,
+                        chosenEnd: approvalForm.chosenEnd,
+                        message: approvalForm.message,
+                      } as ApproveSessionRequestPayload);
+                      alert('Session request approved! A session has been created.');
+                    } else if (approvalAction === 'reject') {
+                      if (!approvalForm.reason?.trim()) {
+                        alert('Please provide a rejection reason');
+                        return;
+                      }
+                      await sessionRequestService.rejectRequest(selectedRequest.id, {
+                        reason: approvalForm.reason,
+                      } as RejectSessionRequestPayload);
+                      alert('Session request rejected.');
+                    } else if (approvalAction === 'counter') {
+                      if (!approvalForm.proposedTimeSlots?.length) {
+                        alert('Please add at least one proposed time slot');
+                        return;
+                      }
+                      await sessionRequestService.counterProposeRequest(selectedRequest.id, {
+                        proposedTimeSlots: approvalForm.proposedTimeSlots,
+                        message: approvalForm.message,
+                      } as CounterProposeSessionRequestPayload);
+                      alert('Counter-proposal sent to student.');
+                    }
+                    setShowApprovalModal(false);
+                    setSelectedRequest(null);
+                    setApprovalAction(null);
+                    setApprovalForm({});
+                    await loadSessionRequests();
+                  } catch (error: any) {
+                    console.error('Failed to process request:', error);
+                    alert(error.response?.data?.message || 'Failed to process request. Please try again.');
+                  }
+                }}
+                className={`px-6 py-2 text-white rounded-xl transition-colors ${
+                  approvalAction === 'approve' ? 'bg-green-600 hover:bg-green-700' :
+                  approvalAction === 'reject' ? 'bg-red-600 hover:bg-red-700' :
+                  'bg-blue-600 hover:bg-blue-700'
+                }`}
+              >
+                {approvalAction === 'approve' && 'Approve'}
+                {approvalAction === 'reject' && 'Reject'}
+                {approvalAction === 'counter' && 'Send Counter-Proposal'}
               </button>
             </div>
           </div>

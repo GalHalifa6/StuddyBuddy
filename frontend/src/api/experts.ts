@@ -410,4 +410,111 @@ export const studentExpertService = {
   markAnswerHelpful: async (questionId: number, helpful: boolean = true, feedback?: string): Promise<void> => {
     await api.post(`/questions/${questionId}/helpful`, { helpful, feedback });
   },
+
+  // Book a session with an expert
+  bookSession: async (expertId: number, data: {
+    title: string;
+    description?: string;
+    agenda?: string;
+    scheduledStartTime: string;
+    scheduledEndTime: string;
+    courseId?: number;
+    meetingPlatform?: string;
+  }): Promise<ExpertSession> => {
+    const response = await api.post('/student-expert/sessions/book', {
+      ...data,
+      expertId,
+      sessionType: 'ONE_ON_ONE',
+    });
+    return response.data;
+  },
+};
+
+// Session Request types and API
+export interface TimeSlot {
+  start: string;
+  end: string;
+}
+
+export interface SessionRequest {
+  id: number;
+  expert: ExpertSummary;
+  student?: StudentSummary;
+  course?: CourseSummary;
+  title: string;
+  description?: string;
+  agenda?: string;
+  preferredTimeSlots: TimeSlot[];
+  status: string;
+  expertResponseMessage?: string;
+  rejectionReason?: string;
+  chosenStart?: string;
+  chosenEnd?: string;
+  createdSessionId?: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateSessionRequestPayload {
+  expertId: number;
+  courseId?: number;
+  title: string;
+  description?: string;
+  agenda?: string;
+  preferredTimeSlots: TimeSlot[];
+}
+
+export interface ApproveSessionRequestPayload {
+  chosenStart: string;
+  chosenEnd: string;
+  message?: string;
+}
+
+export interface RejectSessionRequestPayload {
+  reason: string;
+}
+
+export interface CounterProposeSessionRequestPayload {
+  proposedTimeSlots: TimeSlot[];
+  message?: string;
+}
+
+export const sessionRequestService = {
+  // Student endpoints
+  createRequest: async (data: CreateSessionRequestPayload): Promise<SessionRequest> => {
+    const response = await api.post('/student-expert/session-requests', data);
+    return response.data;
+  },
+
+  getMyRequests: async (): Promise<SessionRequest[]> => {
+    const response = await api.get('/student-expert/session-requests/mine');
+    return response.data;
+  },
+
+  cancelRequest: async (requestId: number): Promise<SessionRequest> => {
+    const response = await api.post(`/student-expert/session-requests/${requestId}/cancel`);
+    return response.data;
+  },
+
+  // Expert endpoints
+  getExpertRequests: async (status?: string): Promise<SessionRequest[]> => {
+    const params = status ? { status } : {};
+    const response = await api.get('/experts/me/session-requests', { params });
+    return response.data;
+  },
+
+  approveRequest: async (requestId: number, data: ApproveSessionRequestPayload): Promise<SessionRequest> => {
+    const response = await api.post(`/experts/session-requests/${requestId}/approve`, data);
+    return response.data;
+  },
+
+  rejectRequest: async (requestId: number, data: RejectSessionRequestPayload): Promise<SessionRequest> => {
+    const response = await api.post(`/experts/session-requests/${requestId}/reject`, data);
+    return response.data;
+  },
+
+  counterProposeRequest: async (requestId: number, data: CounterProposeSessionRequestPayload): Promise<SessionRequest> => {
+    const response = await api.post(`/experts/session-requests/${requestId}/counter-propose`, data);
+    return response.data;
+  },
 };

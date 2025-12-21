@@ -51,6 +51,15 @@ public class ExpertController {
     @Autowired
     private com.studybuddy.service.NotificationService notificationService;
 
+    @Autowired
+    private com.studybuddy.service.SessionService sessionService;
+
+    @Autowired
+    private com.studybuddy.service.MeetingService meetingService;
+
+    @Autowired
+    private com.studybuddy.repository.SessionRequestRepository sessionRequestRepository;
+
     // ==================== Expert Profile Endpoints ====================
 
     /**
@@ -350,7 +359,7 @@ public class ExpertController {
                         .orElseThrow(() -> new RuntimeException("Student not found"));
                 session.setStudent(student);
                 session.setMaxParticipants(1);
-                session.setCurrentParticipants(1);
+                session.setCurrentParticipants(0);
             }
             
             // Set group for group consultations
@@ -371,21 +380,12 @@ public class ExpertController {
             }
             
             ExpertSession savedSession = sessionRepository.save(session);
-
-            // Auto-register targeted student so one-on-one sessions remain accessible
-            if (savedSession.getStudent() != null) {
-                boolean alreadyRegistered = sessionParticipantRepository
-                        .existsBySessionIdAndUserId(savedSession.getId(), savedSession.getStudent().getId());
-                if (!alreadyRegistered) {
-                    SessionParticipant participant = SessionParticipant.builder()
-                            .session(savedSession)
-                            .user(savedSession.getStudent())
-                            .status(SessionParticipant.ParticipantStatus.CONFIRMED)
-                            .registeredAt(LocalDateTime.now())
-                            .attended(false)
-                            .build();
-                    sessionParticipantRepository.save(participant);
-                }
+            
+            // Generate Jitsi meeting link if platform is JITSI and no link provided
+            if ((savedSession.getMeetingPlatform() == null || savedSession.getMeetingPlatform().equals("JITSI")) 
+                    && (savedSession.getMeetingLink() == null || savedSession.getMeetingLink().isEmpty())) {
+                savedSession.setMeetingLink(meetingService.generateJitsiMeetingLink(savedSession.getId()));
+                savedSession = sessionRepository.save(savedSession);
             }
             
             // Send notification to student for one-on-one sessions
@@ -485,6 +485,7 @@ public class ExpertController {
             
             session.start();
             sessionRepository.save(session);
+            sessionService.broadcastStatusUpdate(session);
             
             // Notify all registered participants that the session has started
             List<SessionParticipant> participants = sessionParticipantRepository.findBySessionId(sessionId);
@@ -524,6 +525,7 @@ public class ExpertController {
                 session.setSessionSummary(body.get("summary"));
             }
             sessionRepository.save(session);
+            sessionService.broadcastStatusUpdate(session);
             
             // Update expert profile stats
             ExpertProfile profile = expertProfileRepository.findByUser(expert).orElse(null);
@@ -557,6 +559,193 @@ public class ExpertController {
             sessionRepository.save(session);
             
             return ResponseEntity.ok(Map.of("message", "Session cancelled successfully"));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("message", e.getMessage()));
+        }
+    }
+
+    // ==================== Session Requests (Expert Side) ====================
+
+    /**
+     * Get session requests for expert (filtered by status if provided)
+     */
+    @GetMapping("/me/session-requests")
+    @PreAuthorize("hasAuthority('ROLE_EXPERT') or hasAuthority('ROLE_ADMIN')")
+    public ResponseEntity<?> getSessionRequests(@RequestParam(required = false) String status) {
+        try {
+            User expert = getCurrentUser();
+            List<com.studybuddy.model.SessionRequest> requests;
+            
+            if (status != null && !status.isEmpty()) {
+                try {
+                    com.studybuddy.model.SessionRequest.RequestStatus statusEnum = 
+                        com.studybuddy.model.SessionRequest.RequestStatus.valueOf(status.toUpperCase());
+                    requests = sessionRequestRepository.findByExpertIdAndStatusOrderByCreatedAtDesc(expert.getId(), statusEnum);
+                } catch (IllegalArgumentException e) {
+                    return ResponseEntity.badRequest().body(Map.of("message", "Invalid status: " + status));
+                }
+            } else {
+                // Default to pending requests
+                requests = sessionRequestRepository.findPendingRequestsByExpert(expert.getId());
+            }
+            
+            return ResponseEntity.ok(requests.stream().map(this::toSessionRequestResponse).collect(Collectors.toList()));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("message", e.getMessage()));
+        }
+    }
+
+    /**
+     * Approve a session request and create the session
+     */
+    @PostMapping("/session-requests/{requestId}/approve")
+    @PreAuthorize("hasAuthority('ROLE_EXPERT') or hasAuthority('ROLE_ADMIN')")
+    public ResponseEntity<?> approveSessionRequest(@PathVariable Long requestId, 
+                                                   @Valid @RequestBody ExpertDto.SessionRequestApprove request) {
+        try {
+            User expert = getCurrentUser();
+            com.studybuddy.model.SessionRequest sessionRequest = sessionRequestRepository.findById(requestId)
+                    .orElseThrow(() -> new RuntimeException("Session request not found"));
+            
+            if (!sessionRequest.getExpert().getId().equals(expert.getId())) {
+                return ResponseEntity.status(403).body(Map.of("message", "Not authorized"));
+            }
+            
+            if (sessionRequest.getStatus() != com.studybuddy.model.SessionRequest.RequestStatus.PENDING) {
+                return ResponseEntity.badRequest().body(Map.of("message", "Can only approve pending requests"));
+            }
+            
+            // Check for scheduling conflicts
+            if (sessionRepository.hasSchedulingConflict(expert.getId(), request.getChosenStart(), request.getChosenEnd())) {
+                return ResponseEntity.badRequest().body(Map.of("message", "Expert is not available at this time"));
+            }
+            
+            // Create the session
+            ExpertSession session = ExpertSession.builder()
+                    .expert(expert)
+                    .student(sessionRequest.getStudent())
+                    .title(sessionRequest.getTitle())
+                    .description(sessionRequest.getDescription())
+                    .agenda(sessionRequest.getAgenda())
+                    .sessionType(ExpertSession.SessionType.ONE_ON_ONE)
+                    .status(ExpertSession.SessionStatus.SCHEDULED)
+                    .scheduledStartTime(request.getChosenStart())
+                    .scheduledEndTime(request.getChosenEnd())
+                    .maxParticipants(1)
+                    .meetingPlatform("JITSI")
+                    .build();
+            
+            if (sessionRequest.getCourse() != null) {
+                session.setCourse(sessionRequest.getCourse());
+            }
+            
+            ExpertSession savedSession = sessionRepository.save(session);
+            
+            // Generate Jitsi meeting link after session is saved (so we have the ID)
+            savedSession.setMeetingLink(meetingService.generateJitsiMeetingLink(savedSession.getId()));
+            savedSession = sessionRepository.save(savedSession);
+            
+            // Update session request
+            sessionRequest.setStatus(com.studybuddy.model.SessionRequest.RequestStatus.APPROVED);
+            sessionRequest.setChosenStart(request.getChosenStart());
+            sessionRequest.setChosenEnd(request.getChosenEnd());
+            sessionRequest.setExpertResponseMessage(request.getMessage());
+            sessionRequest.setCreatedSession(savedSession);
+            sessionRequestRepository.save(sessionRequest);
+            
+            // Notify student
+            notificationService.createNotification(
+                    sessionRequest.getStudent(),
+                    "SESSION_APPROVED",
+                    "Session Request Approved",
+                    String.format("%s has approved your session request: %s", expert.getFullName() != null ? expert.getFullName() : expert.getUsername(), sessionRequest.getTitle()),
+                    "/session/" + savedSession.getId()
+            );
+            
+            return ResponseEntity.ok(toSessionRequestResponse(sessionRequest));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("message", e.getMessage()));
+        }
+    }
+
+    /**
+     * Reject a session request
+     */
+    @PostMapping("/session-requests/{requestId}/reject")
+    @PreAuthorize("hasAuthority('ROLE_EXPERT') or hasAuthority('ROLE_ADMIN')")
+    public ResponseEntity<?> rejectSessionRequest(@PathVariable Long requestId,
+                                                  @Valid @RequestBody ExpertDto.SessionRequestReject request) {
+        try {
+            User expert = getCurrentUser();
+            com.studybuddy.model.SessionRequest sessionRequest = sessionRequestRepository.findById(requestId)
+                    .orElseThrow(() -> new RuntimeException("Session request not found"));
+            
+            if (!sessionRequest.getExpert().getId().equals(expert.getId())) {
+                return ResponseEntity.status(403).body(Map.of("message", "Not authorized"));
+            }
+            
+            if (sessionRequest.getStatus() != com.studybuddy.model.SessionRequest.RequestStatus.PENDING) {
+                return ResponseEntity.badRequest().body(Map.of("message", "Can only reject pending requests"));
+            }
+            
+            sessionRequest.setStatus(com.studybuddy.model.SessionRequest.RequestStatus.REJECTED);
+            sessionRequest.setRejectionReason(request.getReason());
+            sessionRequestRepository.save(sessionRequest);
+            
+            // Notify student
+            notificationService.createNotification(
+                    sessionRequest.getStudent(),
+                    "SESSION_REJECTED",
+                    "Session Request Rejected",
+                    String.format("%s has rejected your session request: %s", expert.getFullName() != null ? expert.getFullName() : expert.getUsername(), sessionRequest.getTitle())
+            );
+            
+            return ResponseEntity.ok(toSessionRequestResponse(sessionRequest));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("message", e.getMessage()));
+        }
+    }
+
+    /**
+     * Counter-propose alternative time slots
+     */
+    @PostMapping("/session-requests/{requestId}/counter-propose")
+    @PreAuthorize("hasAuthority('ROLE_EXPERT') or hasAuthority('ROLE_ADMIN')")
+    public ResponseEntity<?> counterProposeSessionRequest(@PathVariable Long requestId,
+                                                          @Valid @RequestBody ExpertDto.SessionRequestCounterPropose request) {
+        try {
+            User expert = getCurrentUser();
+            com.studybuddy.model.SessionRequest sessionRequest = sessionRequestRepository.findById(requestId)
+                    .orElseThrow(() -> new RuntimeException("Session request not found"));
+            
+            if (!sessionRequest.getExpert().getId().equals(expert.getId())) {
+                return ResponseEntity.status(403).body(Map.of("message", "Not authorized"));
+            }
+            
+            if (sessionRequest.getStatus() != com.studybuddy.model.SessionRequest.RequestStatus.PENDING) {
+                return ResponseEntity.badRequest().body(Map.of("message", "Can only counter-propose pending requests"));
+            }
+            
+            // Convert proposed time slots to JSON
+            com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+            mapper.findAndRegisterModules();
+            String timeSlotsJson = mapper.writeValueAsString(request.getProposedTimeSlots());
+            
+            sessionRequest.setStatus(com.studybuddy.model.SessionRequest.RequestStatus.COUNTER_PROPOSED);
+            sessionRequest.setPreferredTimeSlots(timeSlotsJson);
+            sessionRequest.setExpertResponseMessage(request.getMessage());
+            sessionRequestRepository.save(sessionRequest);
+            
+            // Notify student
+            notificationService.createNotification(
+                    sessionRequest.getStudent(),
+                    "SESSION_COUNTER_PROPOSED",
+                    "Session Time Counter-Proposed",
+                    String.format("%s has proposed alternative times for your session: %s", expert.getFullName() != null ? expert.getFullName() : expert.getUsername(), sessionRequest.getTitle()),
+                    "/student-expert/session-requests/" + requestId
+            );
+            
+            return ResponseEntity.ok(toSessionRequestResponse(sessionRequest));
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(Map.of("message", e.getMessage()));
         }
@@ -660,7 +849,19 @@ public class ExpertController {
     // ==================== Expert Reviews ====================
 
     /**
-     * Get reviews for an expert
+     * Get reviews for the current expert (for expert dashboard)
+     */
+    @GetMapping("/me/reviews")
+    @PreAuthorize("hasAuthority('ROLE_EXPERT') or hasAuthority('ROLE_ADMIN')")
+    public ResponseEntity<List<ExpertDto.ReviewResponse>> getMyExpertReviews() {
+        User currentUser = getCurrentUser();
+        List<ExpertReview> reviews = reviewRepository
+                .findByExpertIdAndIsApprovedTrueAndIsPublicTrueOrderByCreatedAtDesc(currentUser.getId());
+        return ResponseEntity.ok(reviews.stream().map(this::toReviewResponse).collect(Collectors.toList()));
+    }
+
+    /**
+     * Get reviews for an expert by their user ID
      */
     @GetMapping("/{expertUserId}/reviews")
     public ResponseEntity<List<ExpertDto.ReviewResponse>> getExpertReviews(@PathVariable Long expertUserId) {
@@ -988,5 +1189,39 @@ public class ExpertController {
         }
         
         return notifications;
+    }
+
+    private ExpertDto.SessionRequestResponse toSessionRequestResponse(com.studybuddy.model.SessionRequest request) {
+        // Parse preferred time slots from JSON
+        List<ExpertDto.TimeSlot> timeSlots = new ArrayList<>();
+        if (request.getPreferredTimeSlots() != null && !request.getPreferredTimeSlots().isEmpty()) {
+            try {
+                com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+                mapper.findAndRegisterModules();
+                timeSlots = mapper.readValue(request.getPreferredTimeSlots(), 
+                    mapper.getTypeFactory().constructCollectionType(List.class, ExpertDto.TimeSlot.class));
+            } catch (Exception e) {
+                // If parsing fails, return empty list
+            }
+        }
+
+        return ExpertDto.SessionRequestResponse.builder()
+                .id(request.getId())
+                .expert(toExpertSummary(request.getExpert()))
+                .student(toStudentSummary(request.getStudent()))
+                .course(request.getCourse() != null ? toCourseSummary(request.getCourse()) : null)
+                .title(request.getTitle())
+                .description(request.getDescription())
+                .agenda(request.getAgenda())
+                .preferredTimeSlots(timeSlots)
+                .status(request.getStatus().getDisplayName())
+                .expertResponseMessage(request.getExpertResponseMessage())
+                .rejectionReason(request.getRejectionReason())
+                .chosenStart(request.getChosenStart())
+                .chosenEnd(request.getChosenEnd())
+                .createdSessionId(request.getCreatedSession() != null ? request.getCreatedSession().getId() : null)
+                .createdAt(request.getCreatedAt())
+                .updatedAt(request.getUpdatedAt())
+                .build();
     }
 }

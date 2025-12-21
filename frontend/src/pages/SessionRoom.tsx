@@ -3,7 +3,9 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { expertService, studentExpertService, ExpertSession } from '../api/experts';
 import { sessionService } from '../api/sessions';
+import { resolveApiUrl } from '@/config/env';
 import { useSessionWebSocket, SessionMessage, WhiteboardDrawData } from '../hooks/useSessionWebSocket';
+import { JitsiMeetEmbed } from '../components/JitsiMeetEmbed';
 import {
   Video,
   VideoOff,
@@ -94,6 +96,7 @@ const SessionRoom: React.FC = () => {
   const [isMuted, setIsMuted] = useState(false);
   const [isVideoOn, setIsVideoOn] = useState(true);
   const [isScreenSharing, setIsScreenSharing] = useState(false);
+  const [showJitsiVideo, setShowJitsiVideo] = useState(false);
   
   // Chat state
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -315,7 +318,7 @@ const SessionRoom: React.FC = () => {
       if (hasJoined.current && user?.id) {
         // Use sendBeacon for reliable delivery during page unload
         const leaveData = JSON.stringify({ userId: user.id, userName: user.fullName || user.username });
-        navigator.sendBeacon(`http://localhost:8080/api/sessions/${sessionId}/leave`, leaveData);
+        navigator.sendBeacon(resolveApiUrl(`/api/sessions/${sessionId}/leave`), leaveData);
         notifyLeave();
       }
     };
@@ -878,7 +881,16 @@ const SessionRoom: React.FC = () => {
           </div>
           
           <div className="flex items-center gap-2">
-            {session.meetingLink && (
+            {session.meetingLink && session.meetingPlatform === 'JITSI' && sessionStatus === 'active' && (
+              <button
+                onClick={() => setShowJitsiVideo(!showJitsiVideo)}
+                className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-xl hover:bg-blue-700"
+              >
+                <Video className="w-4 h-4" />
+                {showJitsiVideo ? 'Hide Video' : 'Join Video Call'}
+              </button>
+            )}
+            {session.meetingLink && (session.meetingPlatform !== 'JITSI' || sessionStatus !== 'active') && (
               <a
                 href={session.meetingLink}
                 target="_blank"
@@ -886,7 +898,7 @@ const SessionRoom: React.FC = () => {
                 className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-xl hover:bg-blue-700"
               >
                 <Video className="w-4 h-4" />
-                {session.meetingPlatform || 'Video'}
+                Join {session.meetingPlatform || 'Video'}
                 <ExternalLink className="w-3 h-3" />
               </a>
             )}
@@ -922,6 +934,29 @@ const SessionRoom: React.FC = () => {
         {/* Left Panel - Video Area */}
         <div className="flex-1 flex flex-col">
           <div className="flex-1 bg-gray-900/50 relative p-4">
+            {/* Show Jitsi embed when session is active and user clicked "Show Video" */}
+            {showJitsiVideo && session?.meetingLink && session?.meetingPlatform === 'JITSI' && sessionStatus === 'active' && (
+              <div className="absolute inset-4 z-50 bg-white rounded-xl overflow-hidden shadow-2xl">
+                <div className="relative w-full h-full">
+                  <button
+                    onClick={() => setShowJitsiVideo(false)}
+                    className="absolute top-4 right-4 z-10 bg-red-500 text-white p-2 rounded-full hover:bg-red-600"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                  <JitsiMeetEmbed
+                    roomName={session.meetingLink}
+                    displayName={user?.fullName || user?.username || 'Participant'}
+                    config={{
+                      startWithAudioMuted: isMuted,
+                      startWithVideoMuted: !isVideoOn,
+                      enableWelcomePage: false,
+                      enableClosePage: false,
+                    }}
+                  />
+                </div>
+              </div>
+            )}
             {(() => {
               // Debug: Log IDs to understand the "amit amit" issue
               console.log('Video panel debug:', {

@@ -129,7 +129,9 @@ public class ExpertDto {
         private String description;
         private String agenda;
         
-        private Long studentId; // For one-on-one sessions
+        private Long expertId; // For booking sessions with an expert (preferred field)
+        @Deprecated // Deprecated: use expertId instead. Kept for backward compatibility
+        private Long studentId; // For one-on-one sessions (when created by expert for specific student)
         private Long groupId; // For group consultations
         private Long courseId;
         
@@ -439,5 +441,98 @@ public class ExpertDto {
         private List<AvailabilitySlot> slots;
         private Boolean isAvailableNow;
         private Boolean acceptingNewStudents;
+    }
+
+    // ============ Session Request DTOs ============
+
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @Builder
+    public static class SessionRequestCreate {
+        @NotNull(message = "Expert ID is required")
+        private Long expertId;
+        
+        private Long courseId;
+        
+        @NotBlank(message = "Title is required")
+        @Size(max = 200, message = "Title must not exceed 200 characters")
+        private String title;
+        
+        private String description;
+        private String agenda;
+        
+        // Preferred time slots as list of objects with start/end
+        private List<TimeSlot> preferredTimeSlots;
+    }
+
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @Builder
+    public static class TimeSlot {
+        @NotNull(message = "Start time is required")
+        private LocalDateTime start;
+        
+        @NotNull(message = "End time is required")
+        private LocalDateTime end;
+    }
+
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @Builder
+    public static class SessionRequestResponse {
+        private Long id;
+        private ExpertSummary expert;
+        private StudentSummary student;
+        private CourseSummary course;
+        private String title;
+        private String description;
+        private String agenda;
+        private List<TimeSlot> preferredTimeSlots;
+        private String status;
+        private String expertResponseMessage;
+        private String rejectionReason;
+        private LocalDateTime chosenStart;
+        private LocalDateTime chosenEnd;
+        private Long createdSessionId;
+        private LocalDateTime createdAt;
+        private LocalDateTime updatedAt;
+    }
+
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @Builder
+    public static class SessionRequestApprove {
+        @NotNull(message = "Start time is required")
+        private LocalDateTime chosenStart;
+        
+        @NotNull(message = "End time is required")
+        private LocalDateTime chosenEnd;
+        
+        private String message;
+    }
+
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @Builder
+    public static class SessionRequestReject {
+        @NotBlank(message = "Rejection reason is required")
+        @Size(max = 1000, message = "Rejection reason must not exceed 1000 characters")
+        private String reason;
+    }
+
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @Builder
+    public static class SessionRequestCounterPropose {
+        @NotEmpty(message = "At least one time slot is required")
+        private List<TimeSlot> proposedTimeSlots;
+        
+        private String message;
     }
 }

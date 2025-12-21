@@ -101,13 +101,14 @@ const Questions: React.FC<QuestionsProps> = ({ initialTab = 'public', mode = 'al
   }, [allowedTabs, loadPublicQuestions]);
 
   useEffect(() => {
-    if (initialTab === 'personal' && allowedTabs.includes('personal')) {
+    if (user && initialTab === 'personal' && allowedTabs.includes('personal')) {
       loadPersonalQuestions();
     }
-  }, [initialTab, allowedTabs, loadPersonalQuestions]);
+  }, [user, initialTab, allowedTabs, loadPersonalQuestions]);
 
   useEffect(() => {
     if (
+      user &&
       activeTab === 'personal' &&
       allowedTabs.includes('personal') &&
       personalQuestions.length === 0 &&
@@ -115,7 +116,7 @@ const Questions: React.FC<QuestionsProps> = ({ initialTab = 'public', mode = 'al
     ) {
       loadPersonalQuestions();
     }
-  }, [activeTab, allowedTabs, personalQuestions.length, loadingPersonal, loadPersonalQuestions]);
+  }, [user, activeTab, allowedTabs, personalQuestions.length, loadingPersonal, loadPersonalQuestions]);
 
   useEffect(() => {
     setExpandedQuestion(null);

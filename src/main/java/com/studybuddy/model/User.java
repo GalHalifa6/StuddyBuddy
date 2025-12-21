@@ -16,6 +16,7 @@ import org.springframework.data.annotation.LastModifiedDate;
 import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 
 import java.time.LocalDateTime;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -84,6 +85,17 @@ public class User {
     // Profile embedding for NLP matching (stored as comma-separated values)
     @Column(columnDefinition = "TEXT")
     private String profileEmbedding;
+
+    @ElementCollection
+    @CollectionTable(name = "user_questionnaire_responses", joinColumns = @JoinColumn(name = "user_id"))
+    @MapKeyColumn(name = "question_key")
+    @Column(name = "answer", columnDefinition = "TEXT")
+    private Map<String, String> questionnaireResponses = new HashMap<>();
+
+    @Column(nullable = false)
+    private Boolean onboardingCompleted = false;
+
+    private LocalDateTime onboardingCompletedAt;
 
     @Column(nullable = false)
     private Boolean isActive = true;

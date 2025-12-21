@@ -2,6 +2,7 @@ import { useEffect, useRef, useCallback, useState } from 'react';
 import { Client, IMessage } from '@stomp/stompjs';
 // @ts-expect-error - SockJS types are not available
 import SockJS from 'sockjs-client/dist/sockjs';
+import { resolveWsUrl } from '@/config/env';
 
 interface UseWebSocketOptions {
   groupId: number;
@@ -20,8 +21,12 @@ export const useWebSocket = ({ groupId, onMessage }: UseWebSocketOptions) => {
       return;
     }
 
+    // Build WebSocket URL with token fallback in query param for mobile compatibility
+    const wsUrl = resolveWsUrl('/ws');
+    const wsUrlWithToken = token ? `${wsUrl}?token=${encodeURIComponent(token)}` : wsUrl;
+    
     const client = new Client({
-      webSocketFactory: () => new SockJS('http://localhost:8080/ws'),
+      webSocketFactory: () => new SockJS(wsUrlWithToken),
       connectHeaders: token ? { Authorization: `Bearer ${token}` } : {},
       debug: (str) => {
         console.log('STOMP Debug:', str);

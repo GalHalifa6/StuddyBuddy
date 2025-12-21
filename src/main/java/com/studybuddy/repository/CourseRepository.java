@@ -18,6 +18,8 @@ public interface CourseRepository extends JpaRepository<Course, Long> {
     List<Course> findByNameContainingIgnoreCase(String name);
     
     List<Course> findByCodeContainingIgnoreCase(String code);
-    
+
     Boolean existsByCode(String code);
+
+
 }

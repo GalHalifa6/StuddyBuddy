@@ -19,8 +19,12 @@ import org.springframework.validation.BindingResult;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 /**
@@ -42,6 +46,16 @@ public class AuthController {
 
     @Autowired
     private JwtUtils jwtUtils;
+
+    private User resolveCurrentUser() {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication == null || authentication.getName() == null) {
+            throw new RuntimeException("User not found");
+        }
+
+        return userRepository.findByUsername(authentication.getName())
+                .orElseThrow(() -> new RuntimeException("User not found"));
+    }
 
     @PostMapping("/register")
     public ResponseEntity<?> registerUser(@Valid @RequestBody AuthDto.RegisterRequest request, BindingResult bindingResult) {
@@ -68,9 +82,14 @@ public class AuthController {
         Role role = Role.USER; // Default role
         if (request.getRole() != null && !request.getRole().isEmpty()) {
             try {
-                role = Role.valueOf(request.getRole().toUpperCase());
+                Role requestedRole = Role.valueOf(request.getRole().toUpperCase());
+                if (requestedRole == Role.ADMIN) {
+                    errors.add("Administrator accounts can only be created by the platform team.");
+                } else {
+                    role = requestedRole;
+                }
             } catch (IllegalArgumentException e) {
-                errors.add("Invalid role. Must be one of: USER, EXPERT, ADMIN");
+                errors.add("Invalid role. Must be USER or EXPERT");
             }
         }
 
@@ -94,6 +113,11 @@ public class AuthController {
         user.setIsActive(true);
         user.setTopicsOfInterest(new ArrayList<>());
         user.setPreferredLanguages(new ArrayList<>());
+        user.setQuestionnaireResponses(new HashMap<>());
+
+        boolean isStudent = role == Role.USER;
+        user.setOnboardingCompleted(!isStudent);
+        user.setOnboardingCompletedAt(isStudent ? null : LocalDateTime.now());
 
         userRepository.save(user);
 
@@ -138,13 +162,28 @@ public class AuthController {
         }
     }
 
-    @PutMapping("/profile")
-    public ResponseEntity<?> updateProfile(@Valid @RequestBody AuthDto.UserProfileRequest request) {
-        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-        String username = authentication.getName();
+    @PostMapping("/onboarding")
+    public ResponseEntity<?> submitOnboarding(@RequestBody AuthDto.OnboardingRequest request) {
+        User user = resolveCurrentUser();
 
-        User user = userRepository.findByUsername(username)
-                .orElseThrow(() -> new RuntimeException("User not found"));
+        if (request == null) {
+            return ResponseEntity.badRequest()
+                    .body(new AuthDto.MessageResponse("Invalid onboarding payload", false));
+        }
+
+        if (request.isSkip()) {
+            user.setQuestionnaireResponses(new LinkedHashMap<>());
+        } else if (request.getResponses() != null) {
+            Map<String, String> responsesMap = request.getResponses().stream()
+                    .filter(answer -> answer.getQuestionKey() != null && answer.getAnswer() != null)
+                    .collect(Collectors.toMap(
+                            AuthDto.QuestionnaireAnswer::getQuestionKey,
+                            AuthDto.QuestionnaireAnswer::getAnswer,
+                            (existing, replacement) -> replacement,
+                            LinkedHashMap::new
+                    ));
+            user.setQuestionnaireResponses(responsesMap);
+        }
 
         if (request.getTopicsOfInterest() != null) {
             user.setTopicsOfInterest(request.getTopicsOfInterest());
@@ -162,6 +201,37 @@ public class AuthController {
             user.setCollaborationStyle(request.getCollaborationStyle());
         }
 
+        user.setOnboardingCompleted(true);
+        user.setOnboardingCompletedAt(LocalDateTime.now());
+
+        userRepository.save(user);
+
+        return ResponseEntity.ok(new AuthDto.MessageResponse("Onboarding responses saved successfully", true));
+    }
+
+    @PutMapping("/profile")
+    public ResponseEntity<?> updateProfile(@Valid @RequestBody AuthDto.UserProfileRequest request) {
+        User user = resolveCurrentUser();
+
+        if (request.getTopicsOfInterest() != null) {
+            user.setTopicsOfInterest(request.getTopicsOfInterest());
+        }
+        if (request.getProficiencyLevel() != null) {
+            user.setProficiencyLevel(request.getProficiencyLevel());
+        }
+        if (request.getPreferredLanguages() != null) {
+            user.setPreferredLanguages(request.getPreferredLanguages());
+        }
+        if (request.getAvailability() != null) {
+            user.setAvailability(request.getAvailability());
+        }
+        if (request.getCollaborationStyle() != null) {
+            user.setCollaborationStyle(request.getCollaborationStyle());
+        }
+        if (request.getQuestionnaireResponses() != null) {
+            user.setQuestionnaireResponses(new LinkedHashMap<>(request.getQuestionnaireResponses()));
+        }
+
         userRepository.save(user);
 
         return ResponseEntity.ok(new AuthDto.MessageResponse("Profile updated successfully!", true));
@@ -169,12 +239,6 @@ public class AuthController {
 
     @GetMapping("/me")
     public ResponseEntity<?> getCurrentUser() {
-        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-        String username = authentication.getName();
-
-        User user = userRepository.findByUsername(username)
-                .orElseThrow(() -> new RuntimeException("User not found"));
-
-        return ResponseEntity.ok(AuthDto.UserResponse.fromUser(user));
+        return ResponseEntity.ok(AuthDto.UserResponse.fromUser(resolveCurrentUser()));
     }
 }
