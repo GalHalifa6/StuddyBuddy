@@ -52,6 +52,7 @@ const Admin: React.FC = () => {
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [showStatusModal, setShowStatusModal] = useState(false);
   const [showUnsuspendModal, setShowUnsuspendModal] = useState(false);
+  const [showUnbanModal, setShowUnbanModal] = useState(false);
   const [showUserDetailModal, setShowUserDetailModal] = useState(false);
   const [showAddCourseModal, setShowAddCourseModal] = useState(false);
   
@@ -269,14 +270,31 @@ const Admin: React.FC = () => {
     }
   };
 
-  const handleUnban = async (userId: number) => {
-    if (!window.confirm('Are you sure you want to unban this user?')) return;
+  const handleUnban = async () => {
+    if (!selectedUser || !reason.trim()) {
+      setErrorMessage('Reason is required');
+      return;
+    }
+    setActionLoading(true);
+    setErrorMessage(null);
     try {
-      await api.post(`/admin/users/${userId}/unban`, { reason: 'Unbanned by admin' });
+      await api.post(`/admin/users/${selectedUser.id}/unban`, { reason });
+      setShowUnbanModal(false);
+      setSelectedUser(null);
+      setReason('');
       fetchData();
     } catch (error: any) {
-      alert(error.response?.data?.message || 'Failed to unban user');
+      setErrorMessage(error.response?.data?.message || 'Failed to unban user');
+    } finally {
+      setActionLoading(false);
     }
+  };
+
+  const openUnbanModal = (u: User) => {
+    setSelectedUser(u);
+    setReason('');
+    setErrorMessage(null);
+    setShowUnbanModal(true);
   };
 
   const handleUnsuspend = async () => {
@@ -1177,7 +1195,7 @@ const Admin: React.FC = () => {
                                     type="button"
                                     onClick={(e) => {
                                       e.stopPropagation();
-                                      handleUnban(u.id);
+                                      openUnbanModal(u);
                                     }}
                                     className="p-2 hover:bg-green-100 rounded-lg cursor-pointer transition-colors"
                                     title="Unban"
@@ -1880,6 +1898,77 @@ const Admin: React.FC = () => {
                 className="px-6 py-2 bg-green-600 text-white rounded-xl hover:bg-green-700 transition-colors disabled:opacity-50"
               >
                 {actionLoading ? 'Removing Suspension...' : 'Remove Suspension'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Unban Modal */}
+      {showUnbanModal && selectedUser && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl w-full max-w-md">
+            <div className="p-6 border-b border-gray-100 flex justify-between items-center">
+              <h2 className="text-xl font-bold text-gray-900">Unban User</h2>
+              <button onClick={() => {
+                setShowUnbanModal(false);
+                setReason('');
+                setErrorMessage(null);
+              }} className="text-gray-400 hover:text-gray-600">
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+            <div className="p-6 space-y-4">
+              <div className="flex items-center gap-3 bg-gray-50 p-4 rounded-xl">
+                <div className="avatar">
+                  {selectedUser.fullName?.charAt(0) || selectedUser.username.charAt(0)}
+                </div>
+                <div>
+                  <p className="font-medium text-gray-900">{selectedUser.fullName || selectedUser.username}</p>
+                  <p className="text-sm text-gray-500">@{selectedUser.username}</p>
+                </div>
+              </div>
+              <div className="bg-green-50 border border-green-200 rounded-xl p-4">
+                <p className="text-sm text-green-800">
+                  <strong>Note:</strong> This will remove the ban and allow the user to access their account again.
+                </p>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Reason <span className="text-red-500">*</span>
+                </label>
+                <textarea
+                  value={reason}
+                  onChange={(e) => setReason(e.target.value)}
+                  placeholder="Enter reason for unbanning user..."
+                  className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-green-500"
+                  rows={3}
+                />
+              </div>
+              {errorMessage && (
+                <div className="bg-red-50 border border-red-200 rounded-xl p-4">
+                  <p className="text-sm text-red-800">{errorMessage}</p>
+                </div>
+              )}
+            </div>
+            <div className="p-6 border-t border-gray-100 flex justify-end gap-3">
+              <button
+                onClick={() => {
+                  setShowUnbanModal(false);
+                  setReason('');
+                  setErrorMessage(null);
+                }}
+                className="px-6 py-2 text-gray-600 hover:bg-gray-100 rounded-xl transition-colors"
+                disabled={actionLoading}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleUnban}
+                disabled={actionLoading}
+                className="px-6 py-2 bg-green-600 text-white rounded-xl hover:bg-green-700 transition-colors disabled:opacity-50"
+              >
+                {actionLoading ? 'Unbanning...' : 'Unban User'}
               </button>
             </div>
           </div>
