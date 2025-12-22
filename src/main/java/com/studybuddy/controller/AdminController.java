@@ -1,22 +1,32 @@
 package com.studybuddy.controller;
 
+import com.studybuddy.dto.AuditLogDto;
 import com.studybuddy.dto.AuthDto;
 import com.studybuddy.dto.UserAdminDto;
+import com.studybuddy.model.AdminAuditLog;
 import com.studybuddy.model.Course;
 import com.studybuddy.model.Role;
 import com.studybuddy.model.StudyGroup;
 import com.studybuddy.model.User;
+import com.studybuddy.repository.AdminAuditLogRepository;
 import com.studybuddy.repository.CourseRepository;
 import com.studybuddy.repository.StudyGroupRepository;
 import com.studybuddy.repository.UserRepository;
 import com.studybuddy.service.AdminService;
 import com.studybuddy.service.AdminStatsService;
+import jakarta.persistence.criteria.Predicate;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -45,6 +55,9 @@ public class AdminController {
 
     @Autowired
     private StudyGroupRepository studyGroupRepository;
+
+    @Autowired
+    private AdminAuditLogRepository auditLogRepository;
 
     @GetMapping("/stats")
     public ResponseEntity<Map<String, Object>> getStatistics() {
@@ -657,5 +670,125 @@ public class AdminController {
         } catch (RuntimeException e) {
             return ResponseEntity.notFound().build();
         }
+    }
+
+    // ========== Audit Log Endpoints ==========
+
+    @GetMapping("/audit-logs")
+    public ResponseEntity<Map<String, Object>> getAuditLogs(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size,
+            @RequestParam(required = false) String actionType,
+            @RequestParam(required = false) String targetType,
+            @RequestParam(required = false) Long adminUserId,
+            @RequestParam(required = false) Long targetId,
+            @RequestParam(required = false) String fromDate,
+            @RequestParam(required = false) String toDate,
+            @RequestParam(required = false) String search) {
+        
+        try {
+            // Create pageable with sorting by createdAt desc
+            Pageable pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "createdAt"));
+            
+            // Build specification for filtering
+            Specification<AdminAuditLog> spec = buildAuditLogSpecification(
+                    actionType, targetType, adminUserId, targetId, fromDate, toDate, search);
+            
+            // Fetch paginated results
+            Page<AdminAuditLog> auditLogPage = auditLogRepository.findAll(spec, pageable);
+            
+            // Convert to DTOs
+            List<AuditLogDto> logs = auditLogPage.getContent().stream()
+                    .map(AuditLogDto::fromAuditLog)
+                    .collect(Collectors.toList());
+            
+            // Build response
+            Map<String, Object> response = new HashMap<>();
+            response.put("content", logs);
+            response.put("totalElements", auditLogPage.getTotalElements());
+            response.put("totalPages", auditLogPage.getTotalPages());
+            response.put("currentPage", auditLogPage.getNumber());
+            response.put("size", auditLogPage.getSize());
+            response.put("hasNext", auditLogPage.hasNext());
+            response.put("hasPrevious", auditLogPage.hasPrevious());
+            
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            return ResponseEntity.badRequest()
+                    .body(Map.of("message", "Error fetching audit logs: " + e.getMessage()));
+        }
+    }
+
+    private Specification<AdminAuditLog> buildAuditLogSpecification(
+            String actionType, String targetType, Long adminUserId, Long targetId,
+            String fromDate, String toDate, String search) {
+        
+        return (root, query, cb) -> {
+            List<Predicate> predicates = new ArrayList<>();
+            
+            // Filter by actionType
+            if (actionType != null && !actionType.trim().isEmpty()) {
+                predicates.add(cb.equal(cb.lower(root.get("actionType")), actionType.toLowerCase()));
+            }
+            
+            // Filter by targetType
+            if (targetType != null && !targetType.trim().isEmpty()) {
+                predicates.add(cb.equal(cb.lower(root.get("targetType")), targetType.toLowerCase()));
+            }
+            
+            // Filter by adminUserId
+            if (adminUserId != null) {
+                predicates.add(cb.equal(root.get("adminUserId"), adminUserId));
+            }
+            
+            // Filter by targetId
+            if (targetId != null) {
+                predicates.add(cb.equal(root.get("targetId"), targetId));
+            }
+            
+            // Filter by date range
+            // Accept both ISO format and datetime-local format (YYYY-MM-DDTHH:mm)
+            if (fromDate != null && !fromDate.trim().isEmpty()) {
+                try {
+                    LocalDateTime from;
+                    if (fromDate.contains("T") && fromDate.length() == 16) {
+                        // datetime-local format: YYYY-MM-DDTHH:mm
+                        from = LocalDateTime.parse(fromDate + ":00");
+                    } else {
+                        // ISO format or other
+                        from = LocalDateTime.parse(fromDate.replace("Z", "").replace("+00:00", ""));
+                    }
+                    predicates.add(cb.greaterThanOrEqualTo(root.get("createdAt"), from));
+                } catch (Exception e) {
+                    // Invalid date format, ignore
+                }
+            }
+            
+            if (toDate != null && !toDate.trim().isEmpty()) {
+                try {
+                    LocalDateTime to;
+                    if (toDate.contains("T") && toDate.length() == 16) {
+                        // datetime-local format: YYYY-MM-DDTHH:mm
+                        to = LocalDateTime.parse(toDate + ":00");
+                    } else {
+                        // ISO format or other
+                        to = LocalDateTime.parse(toDate.replace("Z", "").replace("+00:00", ""));
+                    }
+                    predicates.add(cb.lessThanOrEqualTo(root.get("createdAt"), to));
+                } catch (Exception e) {
+                    // Invalid date format, ignore
+                }
+            }
+            
+            // Search in reason and metadata
+            if (search != null && !search.trim().isEmpty()) {
+                String searchPattern = "%" + search.toLowerCase() + "%";
+                Predicate reasonPredicate = cb.like(cb.lower(root.get("reason")), searchPattern);
+                Predicate metadataPredicate = cb.like(cb.lower(root.get("metadata")), searchPattern);
+                predicates.add(cb.or(reasonPredicate, metadataPredicate));
+            }
+            
+            return cb.and(predicates.toArray(new Predicate[0]));
+        };
     }
 }

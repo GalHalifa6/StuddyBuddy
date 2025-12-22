@@ -2,6 +2,7 @@ package com.studybuddy.repository;
 
 import com.studybuddy.model.AdminAuditLog;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
@@ -13,7 +14,7 @@ import java.util.List;
  * Repository for AdminAuditLog entity
  */
 @Repository
-public interface AdminAuditLogRepository extends JpaRepository<AdminAuditLog, Long> {
+public interface AdminAuditLogRepository extends JpaRepository<AdminAuditLog, Long>, JpaSpecificationExecutor<AdminAuditLog> {
     
     List<AdminAuditLog> findByAdminUserIdOrderByCreatedAtDesc(Long adminUserId);
     

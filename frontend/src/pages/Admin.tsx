@@ -27,6 +27,7 @@ import {
   Clock,
   Mail,
   Calendar,
+  FileText,
 } from 'lucide-react';
 
 const Admin: React.FC = () => {
@@ -805,6 +806,13 @@ const Admin: React.FC = () => {
           </h1>
           <p className="text-gray-600 mt-1">Manage users, courses, and system settings</p>
         </div>
+        <button
+          onClick={() => navigate('/admin/audit')}
+          className="flex items-center gap-2 px-4 py-2 bg-primary-600 text-white rounded-xl hover:bg-primary-700 transition-colors"
+        >
+          <FileText className="w-5 h-5" />
+          View Audit Logs
+        </button>
       </div>
 
       {/* Error Message */}
