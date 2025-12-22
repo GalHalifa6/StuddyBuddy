@@ -5,11 +5,13 @@ import com.studybuddy.dto.AuthDto;
 import com.studybuddy.dto.UserAdminDto;
 import com.studybuddy.model.AdminAuditLog;
 import com.studybuddy.model.Course;
+import com.studybuddy.model.ExpertProfile;
 import com.studybuddy.model.Role;
 import com.studybuddy.model.StudyGroup;
 import com.studybuddy.model.User;
 import com.studybuddy.repository.AdminAuditLogRepository;
 import com.studybuddy.repository.CourseRepository;
+import com.studybuddy.repository.ExpertProfileRepository;
 import com.studybuddy.repository.StudyGroupRepository;
 import com.studybuddy.repository.UserRepository;
 import com.studybuddy.service.AdminService;
@@ -21,6 +23,8 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
+import jakarta.persistence.criteria.Join;
+import jakarta.persistence.criteria.JoinType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
@@ -58,6 +62,9 @@ public class AdminController {
 
     @Autowired
     private AdminAuditLogRepository auditLogRepository;
+
+    @Autowired
+    private ExpertProfileRepository expertProfileRepository;
 
     @GetMapping("/stats")
     public ResponseEntity<Map<String, Object>> getStatistics() {
@@ -790,5 +797,439 @@ public class AdminController {
             
             return cb.and(predicates.toArray(new Predicate[0]));
         };
+    }
+
+    // ========== Expert Management Endpoints ==========
+
+    @GetMapping("/experts")
+    public ResponseEntity<Map<String, Object>> getExperts(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size,
+            @RequestParam(required = false) String status, // PENDING or VERIFIED
+            @RequestParam(required = false) String search,
+            @RequestParam(required = false) String institution,
+            @RequestParam(required = false) String specialization) {
+        
+        try {
+            // Get all users with EXPERT role
+            List<User> expertUsers = userRepository.findAll().stream()
+                    .filter(user -> user.getRole() == Role.EXPERT)
+                    .collect(Collectors.toList());
+            
+            // Build list of expert DTOs (with or without profiles)
+            List<Map<String, Object>> allExperts = new ArrayList<>();
+            
+            for (User expertUser : expertUsers) {
+                ExpertProfile profile = expertProfileRepository.findByUser(expertUser).orElse(null);
+                
+                // If no profile exists, create a DTO for the user without profile
+                if (profile == null) {
+                    // Only include active users who are not deleted
+                    if (expertUser.getIsActive() != null && expertUser.getIsActive() 
+                            && (expertUser.getIsDeleted() == null || !expertUser.getIsDeleted())) {
+                    Map<String, Object> expertDto = new HashMap<>();
+                    // Use userId as id when no profile exists (for frontend compatibility)
+                    expertDto.put("id", expertUser.getId()); // Use userId as identifier
+                    expertDto.put("userId", expertUser.getId());
+                    expertDto.put("username", expertUser.getUsername());
+                    expertDto.put("fullName", expertUser.getFullName() != null ? expertUser.getFullName() : expertUser.getUsername());
+                    expertDto.put("email", expertUser.getEmail());
+                    expertDto.put("isVerified", false);
+                    expertDto.put("isActive", expertUser.getIsActive() != null ? expertUser.getIsActive() : true);
+                    expertDto.put("hasProfile", false);
+                    expertDto.put("createdAt", expertUser.getCreatedAt() != null ? expertUser.getCreatedAt() : LocalDateTime.now());
+                    expertDto.put("title", null);
+                    expertDto.put("institution", null);
+                    expertDto.put("bio", null);
+                    expertDto.put("qualifications", null);
+                    expertDto.put("specializations", new ArrayList<>());
+                    expertDto.put("skills", new ArrayList<>());
+                    expertDto.put("yearsOfExperience", 0);
+                    expertDto.put("averageRating", 0.0);
+                    expertDto.put("totalRatings", 0);
+                    expertDto.put("totalSessions", 0);
+                    expertDto.put("totalQuestionsAnswered", 0);
+                    allExperts.add(expertDto);
+                    }
+                } else {
+                    // Profile exists, use existing DTO conversion
+                    // Include all profiles (active check is done in filtering)
+                    allExperts.add(toExpertAdminDto(profile));
+                }
+            }
+            
+            // Apply filters
+            List<Map<String, Object>> filteredExperts = allExperts.stream()
+                    .filter(expert -> {
+                        // Filter by status
+                        if (status != null && !status.trim().isEmpty()) {
+                            Boolean isVerified = (Boolean) expert.get("isVerified");
+                            if ("PENDING".equalsIgnoreCase(status)) {
+                                if (isVerified == null || !isVerified) {
+                                    return true; // Pending
+                                }
+                                return false;
+                            } else if ("VERIFIED".equalsIgnoreCase(status)) {
+                                return isVerified != null && isVerified; // Verified
+                            }
+                        }
+                        return true; // No status filter
+                    })
+                    .filter(expert -> {
+                        // Filter by isActive
+                        Boolean isActive = (Boolean) expert.get("isActive");
+                        return isActive != null && isActive;
+                    })
+                    .filter(expert -> {
+                        // Filter by search
+                        if (search != null && !search.trim().isEmpty()) {
+                            String searchLower = search.toLowerCase();
+                            String fullName = (String) expert.get("fullName");
+                            String email = (String) expert.get("email");
+                            String bio = (String) expert.get("bio");
+                            return (fullName != null && fullName.toLowerCase().contains(searchLower)) ||
+                                   (email != null && email.toLowerCase().contains(searchLower)) ||
+                                   (bio != null && bio.toLowerCase().contains(searchLower));
+                        }
+                        return true;
+                    })
+                    .filter(expert -> {
+                        // Filter by institution
+                        if (institution != null && !institution.trim().isEmpty()) {
+                            String expertInstitution = (String) expert.get("institution");
+                            return expertInstitution != null && 
+                                   expertInstitution.toLowerCase().contains(institution.toLowerCase());
+                        }
+                        return true;
+                    })
+                    .filter(expert -> {
+                        // Filter by specialization
+                        if (specialization != null && !specialization.trim().isEmpty()) {
+                            @SuppressWarnings("unchecked")
+                            List<String> specializations = (List<String>) expert.get("specializations");
+                            if (specializations == null || specializations.isEmpty()) {
+                                return false;
+                            }
+                            return specializations.stream()
+                                    .anyMatch(s -> s.toLowerCase().contains(specialization.toLowerCase()));
+                        }
+                        return true;
+                    })
+                    .sorted((a, b) -> {
+                        // Sort by createdAt descending (nulls last)
+                        LocalDateTime dateA = (LocalDateTime) a.get("createdAt");
+                        LocalDateTime dateB = (LocalDateTime) b.get("createdAt");
+                        if (dateA == null && dateB == null) return 0;
+                        if (dateA == null) return 1; // nulls go to end
+                        if (dateB == null) return -1; // nulls go to end
+                        return dateB.compareTo(dateA); // newest first
+                    })
+                    .collect(Collectors.toList());
+            
+            // Apply pagination
+            int totalElements = filteredExperts.size();
+            int totalPages = (int) Math.ceil((double) totalElements / size);
+            int start = page * size;
+            int end = Math.min(start + size, totalElements);
+            List<Map<String, Object>> paginatedExperts = start < totalElements 
+                    ? filteredExperts.subList(start, end) 
+                    : new ArrayList<>();
+            
+            Map<String, Object> response = new HashMap<>();
+            response.put("content", paginatedExperts);
+            response.put("totalElements", totalElements);
+            response.put("totalPages", totalPages);
+            response.put("currentPage", page);
+            response.put("size", size);
+            response.put("hasNext", page < totalPages - 1);
+            response.put("hasPrevious", page > 0);
+            
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            return ResponseEntity.badRequest()
+                    .body(Map.of("message", "Error fetching experts: " + e.getMessage()));
+        }
+    }
+
+    @GetMapping("/experts/{expertId}")
+    public ResponseEntity<Map<String, Object>> getExpertDetails(@PathVariable Long expertId) {
+        try {
+            // Try to find by profile ID first
+            ExpertProfile profile = expertProfileRepository.findById(expertId).orElse(null);
+            
+            if (profile != null) {
+                return ResponseEntity.ok(toExpertAdminDto(profile));
+            }
+            
+            // If not found, try to find by userId (for experts without profiles)
+            User expertUser = userRepository.findById(expertId)
+                    .orElseThrow(() -> new RuntimeException("Expert not found"));
+            
+            if (expertUser.getRole() != Role.EXPERT) {
+                return ResponseEntity.badRequest()
+                        .body(Map.of("message", "User is not an expert"));
+            }
+            
+            // Create DTO for user without profile
+            Map<String, Object> expertDto = new HashMap<>();
+            expertDto.put("id", null);
+            expertDto.put("userId", expertUser.getId());
+            expertDto.put("username", expertUser.getUsername());
+            expertDto.put("fullName", expertUser.getFullName());
+            expertDto.put("email", expertUser.getEmail());
+            expertDto.put("isVerified", false);
+            expertDto.put("isActive", true);
+            expertDto.put("hasProfile", false);
+            expertDto.put("createdAt", expertUser.getCreatedAt());
+            expertDto.put("title", null);
+            expertDto.put("institution", null);
+            expertDto.put("bio", null);
+            expertDto.put("qualifications", null);
+            expertDto.put("specializations", new ArrayList<>());
+            expertDto.put("yearsOfExperience", 0);
+            
+            return ResponseEntity.ok(expertDto);
+        } catch (Exception e) {
+            return ResponseEntity.notFound().build();
+        }
+    }
+
+    @PostMapping("/experts/{expertId}/verify")
+    public ResponseEntity<?> verifyExpert(@PathVariable Long expertId, @RequestBody VerifyRequest request) {
+        try {
+            // Try to find profile by ID first
+            ExpertProfile profile = expertProfileRepository.findById(expertId).orElse(null);
+            
+            if (profile == null) {
+                // Try to find by userId and create a basic profile if needed
+                User expertUser = userRepository.findById(expertId)
+                        .orElseThrow(() -> new RuntimeException("Expert not found"));
+                
+                if (expertUser.getRole() != Role.EXPERT) {
+                    return ResponseEntity.badRequest()
+                            .body(new AuthDto.MessageResponse("User is not an expert", false));
+                }
+                
+                // Create a basic profile for the expert
+                profile = new ExpertProfile();
+                profile.setUser(expertUser);
+                profile.setIsActive(true);
+                profile.setIsVerified(false);
+                profile = expertProfileRepository.save(profile);
+            }
+            
+            adminService.verifyExpert(profile.getId(), request.getReason());
+            return ResponseEntity.ok(new AuthDto.MessageResponse("Expert verified successfully", true));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest()
+                    .body(new AuthDto.MessageResponse(e.getMessage(), false));
+        } catch (RuntimeException e) {
+            return ResponseEntity.notFound().build();
+        }
+    }
+
+    @PostMapping("/experts/{expertId}/reject")
+    public ResponseEntity<?> rejectExpert(@PathVariable Long expertId, @RequestBody RejectRequest request) {
+        try {
+            if (request.getReason() == null || request.getReason().trim().isEmpty()) {
+                return ResponseEntity.badRequest()
+                        .body(new AuthDto.MessageResponse("Reason is required for rejecting an expert", false));
+            }
+            
+            // Try to find profile by ID first
+            ExpertProfile profile = expertProfileRepository.findById(expertId).orElse(null);
+            
+            if (profile == null) {
+                // Try to find by userId (for experts without profiles)
+                User expertUser = userRepository.findById(expertId)
+                        .orElseThrow(() -> new RuntimeException("Expert not found"));
+                
+                if (expertUser.getRole() != Role.EXPERT) {
+                    return ResponseEntity.badRequest()
+                            .body(new AuthDto.MessageResponse("User is not an expert", false));
+                }
+                
+                // Create a basic profile for the expert if it doesn't exist
+                profile = expertProfileRepository.findByUser(expertUser).orElse(null);
+                if (profile == null) {
+                    profile = new ExpertProfile();
+                    profile.setUser(expertUser);
+                    profile.setIsActive(true);
+                    profile.setIsVerified(false);
+                    profile = expertProfileRepository.save(profile);
+                }
+            }
+            
+            adminService.rejectExpert(profile.getId(), request.getReason());
+            return ResponseEntity.ok(new AuthDto.MessageResponse("Expert rejected successfully. User role changed to regular user.", true));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest()
+                    .body(new AuthDto.MessageResponse(e.getMessage(), false));
+        } catch (RuntimeException e) {
+            return ResponseEntity.badRequest()
+                    .body(new AuthDto.MessageResponse("Failed to reject expert: " + e.getMessage(), false));
+        }
+    }
+
+    @PostMapping("/experts/{expertId}/revoke")
+    public ResponseEntity<?> revokeExpertVerification(@PathVariable Long expertId, @RequestBody RevokeRequest request) {
+        try {
+            if (request.getReason() == null || request.getReason().trim().isEmpty()) {
+                return ResponseEntity.badRequest()
+                        .body(new AuthDto.MessageResponse("Reason is required for revoking expert verification", false));
+            }
+            
+            // Try to find profile by ID first
+            ExpertProfile profile = expertProfileRepository.findById(expertId).orElse(null);
+            
+            if (profile == null) {
+                // Try to find by userId (for experts without profiles)
+                User expertUser = userRepository.findById(expertId)
+                        .orElseThrow(() -> new RuntimeException("Expert not found"));
+                
+                if (expertUser.getRole() != Role.EXPERT) {
+                    return ResponseEntity.badRequest()
+                            .body(new AuthDto.MessageResponse("User is not an expert", false));
+                }
+                
+                // Find existing profile or return error (can't revoke if no profile exists)
+                profile = expertProfileRepository.findByUser(expertUser)
+                        .orElseThrow(() -> new RuntimeException("Expert profile not found"));
+            }
+            
+            adminService.revokeExpertVerification(profile.getId(), request.getReason());
+            return ResponseEntity.ok(new AuthDto.MessageResponse("Expert verification revoked successfully", true));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest()
+                    .body(new AuthDto.MessageResponse(e.getMessage(), false));
+        } catch (RuntimeException e) {
+            return ResponseEntity.badRequest()
+                    .body(new AuthDto.MessageResponse("Failed to revoke expert verification: " + e.getMessage(), false));
+        }
+    }
+
+    private Specification<ExpertProfile> buildExpertSpecification(
+            String status, String search, String institution, String specialization) {
+        
+        return (root, query, cb) -> {
+            List<Predicate> predicates = new ArrayList<>();
+            
+            // Only show active experts
+            predicates.add(cb.equal(root.get("isActive"), true));
+            
+            // Filter by verification status
+            if (status != null && !status.trim().isEmpty()) {
+                if ("PENDING".equalsIgnoreCase(status)) {
+                    // Pending = not verified (isVerified is false or null)
+                    predicates.add(cb.or(
+                        cb.equal(root.get("isVerified"), false),
+                        cb.isNull(root.get("isVerified"))
+                    ));
+                } else if ("VERIFIED".equalsIgnoreCase(status)) {
+                    // Verified = isVerified is explicitly true
+                    predicates.add(cb.equal(root.get("isVerified"), true));
+                }
+            }
+            
+            // Filter by institution
+            if (institution != null && !institution.trim().isEmpty()) {
+                predicates.add(cb.like(cb.lower(root.get("institution")), 
+                        "%" + institution.toLowerCase() + "%"));
+            }
+            
+            // Filter by specialization
+            if (specialization != null && !specialization.trim().isEmpty()) {
+                Join<ExpertProfile, String> specializationsJoin = root.join("specializations", JoinType.LEFT);
+                predicates.add(cb.like(cb.lower(specializationsJoin), 
+                        "%" + specialization.toLowerCase() + "%"));
+            }
+            
+            // Search in name, email, bio
+            if (search != null && !search.trim().isEmpty()) {
+                String searchPattern = "%" + search.toLowerCase() + "%";
+                Join<ExpertProfile, User> userJoin = root.join("user", JoinType.INNER);
+                Predicate namePredicate = cb.like(cb.lower(userJoin.get("fullName")), searchPattern);
+                Predicate emailPredicate = cb.like(cb.lower(userJoin.get("email")), searchPattern);
+                Predicate bioPredicate = cb.like(cb.lower(root.get("bio")), searchPattern);
+                predicates.add(cb.or(namePredicate, emailPredicate, bioPredicate));
+            }
+            
+            return cb.and(predicates.toArray(new Predicate[0]));
+        };
+    }
+
+    private Map<String, Object> toExpertAdminDto(ExpertProfile profile) {
+        Map<String, Object> dto = new HashMap<>();
+        dto.put("id", profile.getId());
+        dto.put("userId", profile.getUser().getId());
+        dto.put("username", profile.getUser().getUsername());
+        dto.put("fullName", profile.getUser().getFullName());
+        dto.put("email", profile.getUser().getEmail());
+        dto.put("title", profile.getTitle());
+        dto.put("institution", profile.getInstitution());
+        dto.put("bio", profile.getBio());
+        dto.put("qualifications", profile.getQualifications());
+        dto.put("yearsOfExperience", profile.getYearsOfExperience());
+        dto.put("specializations", profile.getSpecializations());
+        dto.put("skills", profile.getSkills());
+        dto.put("isVerified", profile.getIsVerified());
+        dto.put("isActive", profile.getIsActive());
+        dto.put("verifiedAt", profile.getVerifiedAt());
+        dto.put("verifiedBy", profile.getVerifiedBy());
+        dto.put("averageRating", profile.getAverageRating());
+        dto.put("totalRatings", profile.getTotalRatings());
+        dto.put("totalSessions", profile.getTotalSessions());
+        dto.put("totalQuestionsAnswered", profile.getTotalQuestionsAnswered());
+        dto.put("weeklyAvailability", profile.getWeeklyAvailability());
+        dto.put("maxSessionsPerWeek", profile.getMaxSessionsPerWeek());
+        dto.put("sessionDurationMinutes", profile.getSessionDurationMinutes());
+        dto.put("acceptingNewStudents", profile.getAcceptingNewStudents());
+        dto.put("offersGroupConsultations", profile.getOffersGroupConsultations());
+        dto.put("offersOneOnOne", profile.getOffersOneOnOne());
+        dto.put("offersAsyncQA", profile.getOffersAsyncQA());
+        dto.put("typicalResponseHours", profile.getTypicalResponseHours());
+        dto.put("isAvailableNow", profile.getIsAvailableNow());
+        dto.put("helpfulAnswers", profile.getHelpfulAnswers());
+        dto.put("hasProfile", true); // Profile exists
+        dto.put("studentsHelped", profile.getStudentsHelped());
+        dto.put("linkedInUrl", profile.getLinkedInUrl());
+        dto.put("personalWebsite", profile.getPersonalWebsite());
+        dto.put("createdAt", profile.getCreatedAt());
+        dto.put("updatedAt", profile.getUpdatedAt());
+        
+        // Add expertise courses
+        if (profile.getExpertiseCourses() != null) {
+            List<Map<String, Object>> courses = profile.getExpertiseCourses().stream()
+                    .map(course -> {
+                        Map<String, Object> courseMap = new HashMap<>();
+                        courseMap.put("id", course.getId());
+                        courseMap.put("code", course.getCode());
+                        courseMap.put("name", course.getName());
+                        return courseMap;
+                    })
+                    .collect(Collectors.toList());
+            dto.put("expertiseCourses", courses);
+        }
+        
+        return dto;
+    }
+
+    // Request DTOs for expert actions
+    public static class VerifyRequest {
+        private String reason;
+        public String getReason() { return reason; }
+        public void setReason(String reason) { this.reason = reason; }
+    }
+
+    public static class RejectRequest {
+        private String reason;
+        public String getReason() { return reason; }
+        public void setReason(String reason) { this.reason = reason; }
+    }
+
+    public static class RevokeRequest {
+        private String reason;
+        public String getReason() { return reason; }
+        public void setReason(String reason) { this.reason = reason; }
     }
 }

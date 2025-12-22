@@ -4,13 +4,16 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.studybuddy.model.AdminAuditLog;
 import com.studybuddy.model.Course;
+import com.studybuddy.model.ExpertProfile;
 import com.studybuddy.model.Role;
 import com.studybuddy.model.StudyGroup;
 import com.studybuddy.model.User;
 import com.studybuddy.repository.AdminAuditLogRepository;
 import com.studybuddy.repository.CourseRepository;
+import com.studybuddy.repository.ExpertProfileRepository;
 import com.studybuddy.repository.StudyGroupRepository;
 import com.studybuddy.repository.UserRepository;
+import jakarta.persistence.EntityManager;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -38,7 +41,13 @@ public class AdminService {
     private StudyGroupRepository studyGroupRepository;
 
     @Autowired
+    private ExpertProfileRepository expertProfileRepository;
+
+    @Autowired
     private AdminAuditLogRepository auditLogRepository;
+
+    @Autowired
+    private EntityManager entityManager;
 
     private final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -268,8 +277,16 @@ public class AdminService {
             throw new IllegalArgumentException("Cannot permanently delete user until 30 days after soft deletion");
         }
         
+        // Delete expert profile first to avoid foreign key constraint violation
+        // Use native query to ensure deletion happens before user deletion
+        expertProfileRepository.deleteByUserId(userId);
+        entityManager.flush(); // Force immediate commit of deletion
+        
         logAction("PERMANENT_DELETE", "USER", userId, reason, null);
+        
+        // Delete user
         userRepository.delete(user);
+        entityManager.flush(); // Force immediate commit of user deletion
     }
 
     /**
@@ -475,6 +492,109 @@ public class AdminService {
         
         logAction("GROUP_DELETE", "GROUP", groupId, reason, null);
         studyGroupRepository.delete(group);
+    }
+
+    // ========== Expert Management Methods ==========
+
+    /**
+     * Verify an expert profile
+     */
+    @Transactional
+    public ExpertProfile verifyExpert(Long expertId, String reason) {
+        ExpertProfile profile = expertProfileRepository.findById(expertId)
+                .orElseThrow(() -> new RuntimeException("Expert profile not found"));
+        
+        Boolean previousStatus = profile.getIsVerified();
+        profile.setIsVerified(true);
+        profile.setVerifiedAt(LocalDateTime.now());
+        profile.setVerifiedBy(getCurrentAdmin().getUsername());
+        
+        ExpertProfile savedProfile = expertProfileRepository.save(profile);
+        
+        Map<String, Object> metadata = new HashMap<>();
+        metadata.put("previousStatus", previousStatus);
+        metadata.put("newStatus", true);
+        metadata.put("expertUserId", profile.getUser().getId());
+        metadata.put("expertUsername", profile.getUser().getUsername());
+        logAction("EXPERT_VERIFY", "EXPERT", expertId, reason, metadata);
+        
+        return savedProfile;
+    }
+
+    /**
+     * Reject an expert profile - delete the profile and change user role to USER
+     */
+    @Transactional
+    public void rejectExpert(Long expertId, String reason) {
+        if (reason == null || reason.trim().isEmpty()) {
+            throw new IllegalArgumentException("Reason is required for rejecting an expert");
+        }
+        
+        ExpertProfile profile = expertProfileRepository.findById(expertId)
+                .orElseThrow(() -> new RuntimeException("Expert profile not found"));
+        
+        // Get user info before deleting profile
+        User expertUser = profile.getUser();
+        Long expertUserId = expertUser.getId();
+        String expertUsername = expertUser.getUsername();
+        Boolean previousStatus = profile.getIsVerified();
+        
+        // Delete the expert profile first using repository method
+        expertProfileRepository.deleteById(profile.getId());
+        entityManager.flush(); // Force immediate commit of deletion
+        entityManager.clear(); // Clear persistence context
+        
+        // Reload user entity to ensure it's managed
+        User managedUser = userRepository.findById(expertUserId)
+                .orElseThrow(() -> new RuntimeException("User not found after profile deletion"));
+        
+        // Change user role from EXPERT to USER
+        managedUser.setRole(Role.USER);
+        userRepository.save(managedUser);
+        entityManager.flush(); // Ensure role change is committed
+        
+        Map<String, Object> metadata = new HashMap<>();
+        metadata.put("previousStatus", previousStatus);
+        metadata.put("newStatus", "REJECTED");
+        metadata.put("expertUserId", expertUserId);
+        metadata.put("expertUsername", expertUsername);
+        metadata.put("action", "REJECTED");
+        metadata.put("roleChanged", "EXPERT -> USER");
+        logAction("EXPERT_REJECT", "EXPERT", expertId, reason, metadata);
+    }
+
+    /**
+     * Revoke verification from an expert
+     */
+    @Transactional
+    public ExpertProfile revokeExpertVerification(Long expertId, String reason) {
+        if (reason == null || reason.trim().isEmpty()) {
+            throw new IllegalArgumentException("Reason is required for revoking expert verification");
+        }
+        
+        ExpertProfile profile = expertProfileRepository.findById(expertId)
+                .orElseThrow(() -> new RuntimeException("Expert profile not found"));
+        
+        if (!profile.getIsVerified()) {
+            throw new IllegalArgumentException("Expert is not verified");
+        }
+        
+        Boolean previousStatus = profile.getIsVerified();
+        profile.setIsVerified(false);
+        profile.setVerifiedAt(null);
+        profile.setVerifiedBy(null);
+        
+        ExpertProfile savedProfile = expertProfileRepository.save(profile);
+        
+        Map<String, Object> metadata = new HashMap<>();
+        metadata.put("previousStatus", previousStatus);
+        metadata.put("newStatus", false);
+        metadata.put("expertUserId", profile.getUser().getId());
+        metadata.put("expertUsername", profile.getUser().getUsername());
+        metadata.put("action", "REVOKED");
+        logAction("EXPERT_REVOKE", "EXPERT", expertId, reason, metadata);
+        
+        return savedProfile;
     }
 }
 

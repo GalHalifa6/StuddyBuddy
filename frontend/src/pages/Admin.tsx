@@ -806,13 +806,22 @@ const Admin: React.FC = () => {
           </h1>
           <p className="text-gray-600 mt-1">Manage users, courses, and system settings</p>
         </div>
-        <button
-          onClick={() => navigate('/admin/audit')}
-          className="flex items-center gap-2 px-4 py-2 bg-primary-600 text-white rounded-xl hover:bg-primary-700 transition-colors"
-        >
-          <FileText className="w-5 h-5" />
-          View Audit Logs
-        </button>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => navigate('/admin/audit')}
+            className="flex items-center gap-2 px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded-xl transition-colors"
+          >
+            <FileText className="w-5 h-5" />
+            Audit Logs
+          </button>
+          <button
+            onClick={() => navigate('/admin/experts')}
+            className="flex items-center gap-2 px-4 py-2 bg-primary-600 text-white rounded-xl hover:bg-primary-700 transition-colors"
+          >
+            <Award className="w-5 h-5" />
+            Expert Verification
+          </button>
+        </div>
       </div>
 
       {/* Error Message */}
