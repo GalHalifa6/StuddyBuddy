@@ -229,7 +229,6 @@ class SessionRequestControllerTest {
         
         when(userRepository.findByUsername("expert")).thenReturn(Optional.of(expertUser));
         when(expertProfileRepository.findByUser(expertUser)).thenReturn(Optional.of(expertProfile));
-        when(expertProfileRepository.findByUser(studentUser)).thenReturn(Optional.empty());
         when(sessionRequestRepository.findById(1L)).thenReturn(Optional.of(testRequest));
         when(sessionRepository.hasSchedulingConflict(anyLong(), any(), any())).thenReturn(false);
         when(meetingService.generateJitsiMeetingLink(anyLong())).thenReturn("https://meet.jit.si/test-room");
