@@ -92,8 +92,13 @@ const QuizOnboarding: React.FC = () => {
       setTimeout(() => {
         navigate('/dashboard', { replace: true });
       }, 1800);
-    } catch (err: any) {
-      setError(err.response?.data?.message || 'Failed to submit quiz. Please try again.');
+    } catch (err: unknown) {
+      const errorMessage = err && typeof err === 'object' && 'response' in err
+        ? (err as { response?: { data?: { message?: string } } }).response?.data?.message
+        : err instanceof Error
+        ? err.message
+        : 'Failed to submit quiz. Please try again.';
+      setError(errorMessage || 'Failed to submit quiz. Please try again.');
     } finally {
       setIsSubmitting(false);
     }

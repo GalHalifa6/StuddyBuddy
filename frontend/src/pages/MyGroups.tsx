@@ -33,7 +33,6 @@ import {
   Plus,
   MapPin,
   Clock,
-  Edit,
 } from 'lucide-react';
 
 interface ChatPreview {
@@ -215,6 +214,7 @@ const MyGroups: React.FC = () => {
       subscribedGroupsRef.current.clear();
       subscriptionsRef.current.clear();
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // Only run once on mount
 
   // Subscribe to new groups as chats are loaded or updated
@@ -255,7 +255,7 @@ const MyGroups: React.FC = () => {
         console.log('Unsubscribed from group', groupId);
       }
     });
-  }, [chats.length, isConnected]); // Re-run when connection state or number of chats changes
+  }, [chats, isConnected]); // Re-run when connection state or chats change
 
   // Load all user's groups
   const loadChats = useCallback(async () => {
@@ -308,6 +308,7 @@ const MyGroups: React.FC = () => {
     } finally {
       setIsLoading(false);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.id]);
 
   // Load messages for selected group
@@ -339,7 +340,7 @@ const MyGroups: React.FC = () => {
         )
       );
     }
-  }, [selectedGroupId, loadMessages]);
+  }, [selectedGroupId, loadMessages, setSearchParams]);
 
   useEffect(() => {
     scrollToBottom();
@@ -1023,7 +1024,7 @@ const MyGroups: React.FC = () => {
                 </div>
 
                 <div className="space-y-2">
-                  {selectedChat.group.members?.map((member: any, index: number) => (
+                  {selectedChat.group.members?.map((member: User, index: number) => (
                     <div
                       key={member.id || index}
                       className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-800 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-750 transition"

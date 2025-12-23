@@ -100,13 +100,18 @@ const GoogleCallback: React.FC = () => {
         setTimeout(() => {
           navigate(wasLinking ? '/settings' : '/dashboard');
         }, 2000);
-      } catch (error: any) {
+      } catch (error: unknown) {
         // Mark as processed to prevent re-runs
         hasProcessed.current = true;
         setStatus('error');
         localStorage.removeItem('token');
-        const errorMessage = error.response?.data?.message || 
-                           error.response?.data?.errors?.[0] ||
+        let errorMessage = 'Failed to authenticate with Google';
+        if (error && typeof error === 'object' && 'response' in error) {
+          const axiosError = error as { response?: { data?: { message?: string; errors?: string[] } } };
+          errorMessage = axiosError.response?.data?.message || 
+                         axiosError.response?.data?.errors?.[0] ||
+                         errorMessage;
+        }
                            'Failed to complete Google sign-in. Please try again.';
         setMessage(errorMessage);
       }

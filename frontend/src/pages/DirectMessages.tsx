@@ -21,13 +21,14 @@ const DirectMessages: React.FC<DirectMessagesProps> = ({ selectedConversationId:
 
   useEffect(() => {
     loadConversations();
-    if (initialSelectedId) {
+    if (initialSelectedId && conversations.length > 0) {
       const conv = conversations.find((c) => c.id === initialSelectedId);
       if (conv) {
         selectConversation(conv);
       }
     }
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialSelectedId]);
 
   useEffect(() => {
     if (selectedConversation) {

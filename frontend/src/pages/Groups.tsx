@@ -493,7 +493,7 @@ const Groups: React.FC = () => {
                 </label>
                 <select
                   value={filterVisibility}
-                  onChange={(e) => setFilterVisibility(e.target.value as any)}
+                  onChange={(e) => setFilterVisibility(e.target.value as 'all' | 'open' | 'approval' | 'private')}
                   className="w-full px-4 py-2 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 text-gray-900 dark:text-white"
                 >
                   <option value="all">All Types</option>
@@ -510,7 +510,7 @@ const Groups: React.FC = () => {
                 </label>
                 <select
                   value={filterAvailability}
-                  onChange={(e) => setFilterAvailability(e.target.value as any)}
+                  onChange={(e) => setFilterAvailability(e.target.value as 'all' | 'available' | 'full')}
                   className="w-full px-4 py-2 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 text-gray-900 dark:text-white"
                 >
                   <option value="all">All Groups</option>
@@ -534,7 +534,7 @@ const Groups: React.FC = () => {
                 ].map(({ value, label, icon: Icon }) => (
                   <button
                     key={value}
-                    onClick={() => setSortBy(value as any)}
+                    onClick={() => setSortBy(value as 'match' | 'members' | 'recent' | 'name')}
                     className={`px-4 py-2 rounded-lg font-medium transition-colors flex items-center gap-2 ${
                       sortBy === value
                         ? 'bg-indigo-600 text-white'

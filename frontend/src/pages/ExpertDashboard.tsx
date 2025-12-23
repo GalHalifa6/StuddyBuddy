@@ -127,7 +127,8 @@ const ExpertDashboard: React.FC = () => {
     }, 30000);
     
     return () => clearInterval(refreshInterval);
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab]);
   
   useEffect(() => {
     if (activeTab === 'session-requests') {
@@ -174,11 +175,13 @@ const ExpertDashboard: React.FC = () => {
           maxSessionsPerWeek: profileData.maxSessionsPerWeek || 10,
           sessionDurationMinutes: profileData.sessionDurationMinutes || 60,
         });
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      } catch (err: any) {
+      } catch (err: unknown) {
         // Profile doesn't exist yet - show create profile modal
-        if (err.response?.status === 404) {
-          setShowProfileModal(true);
+        if (err && typeof err === 'object' && 'response' in err) {
+          const axiosError = err as { response?: { status?: number } };
+          if (axiosError.response?.status === 404) {
+            setShowProfileModal(true);
+          }
         }
       }
 
@@ -280,10 +283,14 @@ const ExpertDashboard: React.FC = () => {
       setStudentSearchQuery('');
       setStudentSearchResults([]);
       loadData();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Failed to create session:', error);
-      alert(error.response?.data?.message || 'Failed to create session. Please try again.');
+      const errorMessage = error && typeof error === 'object' && 'response' in error
+        ? (error as { response?: { data?: { message?: string } } }).response?.data?.message
+        : error instanceof Error
+        ? error.message
+        : 'Failed to create session. Please try again.';
+      alert(errorMessage || 'Failed to create session. Please try again.');
     }
   };
 

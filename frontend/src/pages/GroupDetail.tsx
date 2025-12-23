@@ -17,7 +17,6 @@ import {
 
 const GroupDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
-  const { user } = useAuth();
   const navigate = useNavigate();
   const [group, setGroup] = useState<StudyGroup | null>(null);
   const [memberStatus, setMemberStatus] = useState<GroupMemberStatus | null>(null);
@@ -68,9 +67,14 @@ const GroupDetail: React.FC = () => {
         // Successfully joined - redirect to chat
         navigate(`/my-groups?group=${id}`);
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error joining group:', error);
-      alert(error?.response?.data?.message || 'Error joining group');
+      const errorMessage = error && typeof error === 'object' && 'response' in error
+        ? (error as { response?: { data?: { message?: string } } }).response?.data?.message
+        : error instanceof Error
+        ? error.message
+        : 'Error joining group';
+      alert(errorMessage || 'Error joining group');
     } finally {
       setIsJoining(false);
     }

@@ -41,9 +41,14 @@ const SessionRequests: React.FC = () => {
       await sessionRequestService.cancelRequest(requestId);
       await loadRequests();
       alert('Session request cancelled successfully');
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Failed to cancel request:', error);
-      alert(error.response?.data?.message || 'Failed to cancel request');
+      const errorMessage = error && typeof error === 'object' && 'response' in error
+        ? (error as { response?: { data?: { message?: string } } }).response?.data?.message
+        : error instanceof Error
+        ? error.message
+        : 'Failed to cancel request';
+      alert(errorMessage || 'Failed to cancel request');
     }
   };
 

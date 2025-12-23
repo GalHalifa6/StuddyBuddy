@@ -939,9 +939,14 @@ const ExpertsBrowse: React.FC = () => {
                     setShowSessionRequestModal(false);
                     setSessionRequestForm({ title: '', description: '', agenda: '', preferredTimeSlots: [] });
                     alert('Session request submitted! The expert will be notified and can approve or propose alternative times.');
-                  } catch (error: any) {
+                  } catch (error: unknown) {
                     console.error('Failed to submit session request:', error);
-                    alert(error.response?.data?.message || 'Failed to submit session request. Please try again.');
+                    const errorMessage = error && typeof error === 'object' && 'response' in error
+                      ? (error as { response?: { data?: { message?: string } } }).response?.data?.message
+                      : error instanceof Error
+                      ? error.message
+                      : 'Failed to submit session request. Please try again.';
+                    alert(errorMessage || 'Failed to submit session request. Please try again.');
                   } finally {
                     setIsSubmittingRequest(false);
                   }

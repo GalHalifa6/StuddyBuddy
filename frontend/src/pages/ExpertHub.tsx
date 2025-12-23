@@ -36,7 +36,6 @@ type TabType = 'experts' | 'sessions' | 'questions';
 
 const ExpertsBrowse: React.FC = () => {
   const navigate = useNavigate();
-  const { user } = useAuth();
   const [activeTab, setActiveTab] = useState<TabType>('experts');
   const [loading, setLoading] = useState(true);
   
@@ -202,8 +201,13 @@ const ExpertsBrowse: React.FC = () => {
     try {
       await sessionService.joinSession(sessionId);
       loadInitialData();
-    } catch (error: any) {
-      alert(error.response?.data?.message || 'Failed to join session');
+    } catch (error: unknown) {
+      const errorMessage = error && typeof error === 'object' && 'response' in error
+        ? (error as { response?: { data?: { message?: string } } }).response?.data?.message
+        : error instanceof Error
+        ? error.message
+        : 'Failed to join session';
+      alert(errorMessage || 'Failed to join session');
     }
   };
 
