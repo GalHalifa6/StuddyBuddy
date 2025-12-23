@@ -1,11 +1,15 @@
 package com.studybuddy.controller;
 
 import com.studybuddy.dto.ExpertDto;
+import com.studybuddy.dto.SessionActionResponse;
+import com.studybuddy.dto.SessionDto;
 import com.studybuddy.model.*;
 import com.studybuddy.repository.*;
 import com.studybuddy.service.NotificationService;
+import com.studybuddy.service.SessionService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
@@ -39,6 +43,15 @@ public class SessionController {
     @Autowired
     private NotificationService notificationService;
 
+    @Autowired
+    private SessionService sessionService;
+    
+    @Autowired
+    private SimpMessagingTemplate messagingTemplate;
+    
+    @Autowired
+    private com.studybuddy.repository.SessionMessageRepository sessionMessageRepository;
+
     private User getCurrentUser() {
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
         return userRepository.findByUsername(auth.getName())
@@ -57,6 +70,14 @@ public class SessionController {
         
         LocalDateTime now = LocalDateTime.now();
         LocalDateTime twoWeeksFromNow = now.plusDays(14);
+        User currentUser = getCurrentUser();
+        boolean isPrivileged = currentUser.getRole() == Role.ADMIN || currentUser.getRole() == Role.EXPERT;
+        Set<Long> enrolledCourseIds = currentUser.getCourses() == null
+            ? new HashSet<>()
+            : currentUser.getCourses().stream()
+                .map(Course::getId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
         
         List<ExpertSession> sessions;
         
@@ -69,6 +90,7 @@ public class SessionController {
         
         // Filter sessions
         sessions = sessions.stream()
+            .filter(s -> canBrowseSession(s, currentUser, isPrivileged, enrolledCourseIds))
             .filter(s -> s.getStatus() == ExpertSession.SessionStatus.SCHEDULED || 
                         s.getStatus() == ExpertSession.SessionStatus.IN_PROGRESS)
             .filter(s -> !Boolean.TRUE.equals(s.getIsCancelled()))
@@ -103,7 +125,6 @@ public class SessionController {
         }
         
         // Add expert info to response
-        User currentUser = getCurrentUser();
         List<Map<String, Object>> result = sessions.stream()
             .map(s -> {
                 Map<String, Object> map = toSessionMap(s);
@@ -138,9 +159,18 @@ public class SessionController {
         List<SessionParticipant> participants = participantRepository.findByUserId(user.getId());
         
         List<Map<String, Object>> upcomingSessions = participants.stream()
-            .filter(p -> p.getSession().getScheduledStartTime().isAfter(now) ||
-                        p.getSession().getStatus() == ExpertSession.SessionStatus.IN_PROGRESS)
-            .filter(p -> !Boolean.TRUE.equals(p.getSession().getIsCancelled()))
+            .filter(p -> {
+                ExpertSession session = p.getSession();
+                // Exclude completed and cancelled sessions
+                if (session.getStatus() == ExpertSession.SessionStatus.COMPLETED || 
+                    session.getStatus() == ExpertSession.SessionStatus.CANCELLED ||
+                    Boolean.TRUE.equals(session.getIsCancelled())) {
+                    return false;
+                }
+                // Include if scheduled in future or currently in progress
+                return session.getScheduledStartTime().isAfter(now) ||
+                       session.getStatus() == ExpertSession.SessionStatus.IN_PROGRESS;
+            })
             .sorted((a, b) -> a.getSession().getScheduledStartTime().compareTo(b.getSession().getScheduledStartTime()))
             .map(p -> {
                 Map<String, Object> map = toSessionMap(p.getSession());
@@ -165,9 +195,18 @@ public class SessionController {
         List<SessionParticipant> participants = participantRepository.findByUserId(user.getId());
         
         long count = participants.stream()
-            .filter(p -> p.getSession().getScheduledStartTime().isAfter(now) ||
-                        p.getSession().getStatus() == ExpertSession.SessionStatus.IN_PROGRESS)
-            .filter(p -> !Boolean.TRUE.equals(p.getSession().getIsCancelled()))
+            .filter(p -> {
+                ExpertSession session = p.getSession();
+                // Exclude completed and cancelled sessions
+                if (session.getStatus() == ExpertSession.SessionStatus.COMPLETED || 
+                    session.getStatus() == ExpertSession.SessionStatus.CANCELLED ||
+                    Boolean.TRUE.equals(session.getIsCancelled())) {
+                    return false;
+                }
+                // Include if scheduled in future or currently in progress
+                return session.getScheduledStartTime().isAfter(now) ||
+                       session.getStatus() == ExpertSession.SessionStatus.IN_PROGRESS;
+            })
             .count();
         
         return ResponseEntity.ok(Map.of("count", count));
@@ -248,73 +287,30 @@ public class SessionController {
      * Join a session
      */
     @PostMapping("/{sessionId}/join")
-    public ResponseEntity<?> joinSession(@PathVariable Long sessionId) {
-        try {
-            User user = getCurrentUser();
-            ExpertSession session = sessionRepository.findById(sessionId)
-                .orElseThrow(() -> new RuntimeException("Session not found"));
-            
-            // Check if session is full
-            if (session.getCurrentParticipants() >= session.getMaxParticipants()) {
-                return ResponseEntity.badRequest().body(Map.of("message", "Session is full"));
-            }
-            
-            // Check if session is cancelled
-            if (Boolean.TRUE.equals(session.getIsCancelled())) {
-                return ResponseEntity.badRequest().body(Map.of("message", "Session has been cancelled"));
-            }
-            
-            // Check if already registered
-            if (participantRepository.existsBySessionIdAndUserId(sessionId, user.getId())) {
-                return ResponseEntity.badRequest().body(Map.of("message", "Already registered for this session"));
-            }
-            
-            // Create participant record
-            SessionParticipant participant = SessionParticipant.builder()
-                .session(session)
-                .user(user)
-                .status(SessionParticipant.ParticipantStatus.REGISTERED)
-                .registeredAt(LocalDateTime.now())
-                .build();
-            participantRepository.save(participant);
-            
-            // Update participant count
-            session.setCurrentParticipants(session.getCurrentParticipants() + 1);
-            sessionRepository.save(session);
-            
-            return ResponseEntity.ok(Map.of(
-                "message", "Successfully registered for session",
-                "session", toSessionMap(session)
-            ));
-        } catch (Exception e) {
-            return ResponseEntity.badRequest().body(Map.of("message", e.getMessage()));
-        }
+    public ResponseEntity<SessionActionResponse> joinSession(@PathVariable Long sessionId) {
+        User user = getCurrentUser();
+        SessionDto session = sessionService.joinSession(sessionId, user.getId());
+        SessionActionResponse response = new SessionActionResponse(
+                "Successfully registered for session",
+                session,
+                true
+        );
+        return ResponseEntity.ok(response);
     }
 
     /**
      * Leave/cancel registration for a session
      */
     @PostMapping("/{sessionId}/leave")
-    public ResponseEntity<?> leaveSession(@PathVariable Long sessionId) {
-        try {
-            User user = getCurrentUser();
-            
-            SessionParticipant participant = participantRepository.findBySessionIdAndUserId(sessionId, user.getId())
-                .orElseThrow(() -> new RuntimeException("Not registered for this session"));
-            
-            ExpertSession session = participant.getSession();
-            
-            // Remove participant
-            participantRepository.delete(participant);
-            
-            // Update participant count
-            session.setCurrentParticipants(Math.max(0, session.getCurrentParticipants() - 1));
-            sessionRepository.save(session);
-            
-            return ResponseEntity.ok(Map.of("message", "Successfully left session"));
-        } catch (Exception e) {
-            return ResponseEntity.badRequest().body(Map.of("message", e.getMessage()));
-        }
+    public ResponseEntity<SessionActionResponse> leaveSession(@PathVariable Long sessionId) {
+        User user = getCurrentUser();
+        SessionDto session = sessionService.leaveSession(sessionId, user.getId());
+        SessionActionResponse response = new SessionActionResponse(
+                "Successfully left session",
+                session,
+                false
+        );
+        return ResponseEntity.ok(response);
     }
 
     /**
@@ -392,5 +388,132 @@ public class SessionController {
         }
         
         return map;
+    }
+
+    private boolean canBrowseSession(ExpertSession session, User currentUser, boolean isPrivileged, Set<Long> enrolledCourseIds) {
+        if (session.getCourse() == null) {
+            return true;
+        }
+        if (isPrivileged) {
+            return true;
+        }
+        if (session.getStudent() != null && Objects.equals(session.getStudent().getId(), currentUser.getId())) {
+            return true;
+        }
+        Long courseId = session.getCourse().getId();
+        return courseId != null && enrolledCourseIds.contains(courseId);
+    }
+    
+    /**
+     * Send a chat message in a session (REST endpoint for mobile compatibility)
+     * This broadcasts the message via WebSocket so all clients receive it
+     */
+    @PostMapping("/{sessionId}/chat")
+    public ResponseEntity<?> sendSessionMessage(
+            @PathVariable Long sessionId,
+            @RequestBody Map<String, Object> payload) {
+        
+        User sender = getCurrentUser();
+        
+        // Verify session exists
+        ExpertSession session = sessionRepository.findById(sessionId).orElse(null);
+        if (session == null) {
+            return ResponseEntity.notFound().build();
+        }
+        
+        // Verify user is a participant
+        boolean isParticipant = participantRepository.existsBySessionIdAndUserId(sessionId, sender.getId()) ||
+                                Objects.equals(session.getExpert().getId(), sender.getId());
+        
+        if (!isParticipant) {
+            return ResponseEntity.status(403).body(Map.of("message", "Not authorized to send messages in this session"));
+        }
+        
+        // Build message response (same format as WebSocket)
+        Map<String, Object> message = new HashMap<>();
+        message.put("id", System.currentTimeMillis());
+        message.put("sessionId", sessionId);
+        message.put("senderId", sender.getId());
+        message.put("senderName", sender.getFullName() != null ? sender.getFullName() : sender.getUsername());
+        message.put("content", payload.get("content"));
+        message.put("type", payload.getOrDefault("type", "text"));
+        message.put("timestamp", LocalDateTime.now().toString());
+        
+        // Include optional fields
+        if (payload.containsKey("fileUrl")) {
+            message.put("fileUrl", payload.get("fileUrl"));
+        }
+        if (payload.containsKey("fileName")) {
+            message.put("fileName", payload.get("fileName"));
+        }
+        if (payload.containsKey("language")) {
+            message.put("language", payload.get("language"));
+        }
+        
+        // Persist the message
+        SessionMessage sessionMessage = SessionMessage.builder()
+            .session(session)
+            .sender(sender)
+            .content((String) payload.get("content"))
+            .messageType((String) payload.getOrDefault("type", "text"))
+            .fileUrl(payload.containsKey("fileUrl") ? (String) payload.get("fileUrl") : null)
+            .fileName(payload.containsKey("fileName") ? (String) payload.get("fileName") : null)
+            .language(payload.containsKey("language") ? (String) payload.get("language") : null)
+            .build();
+        SessionMessage savedMessage = sessionMessageRepository.save(sessionMessage);
+        
+        // Update message ID with database ID
+        message.put("id", savedMessage.getId());
+        
+        System.out.println("REST: Broadcasting chat message to /topic/session/" + sessionId + "/chat: " + message);
+        
+        // Broadcast to all session participants via WebSocket
+        messagingTemplate.convertAndSend("/topic/session/" + sessionId + "/chat", message);
+        
+        return ResponseEntity.ok(message);
+    }
+    
+    /**
+     * Get chat messages for a session (for mobile polling)
+     */
+    @GetMapping("/{sessionId}/messages")
+    public ResponseEntity<?> getSessionMessages(@PathVariable Long sessionId) {
+        User user = getCurrentUser();
+        
+        // Verify session exists
+        ExpertSession session = sessionRepository.findById(sessionId).orElse(null);
+        if (session == null) {
+            return ResponseEntity.notFound().build();
+        }
+        
+        // Verify user is a participant
+        boolean isParticipant = participantRepository.existsBySessionIdAndUserId(sessionId, user.getId()) ||
+                                Objects.equals(session.getExpert().getId(), user.getId());
+        
+        if (!isParticipant) {
+            return ResponseEntity.status(403).body(Map.of("message", "Not authorized to view messages in this session"));
+        }
+        
+        // Get all messages for this session
+        List<SessionMessage> messages = sessionMessageRepository.findBySessionIdOrderByCreatedAtAsc(sessionId);
+        
+        List<Map<String, Object>> result = messages.stream()
+            .map(msg -> {
+                Map<String, Object> msgMap = new HashMap<>();
+                msgMap.put("id", msg.getId());
+                msgMap.put("sessionId", sessionId);
+                msgMap.put("senderId", msg.getSender().getId());
+                msgMap.put("senderName", msg.getSender().getFullName() != null ? msg.getSender().getFullName() : msg.getSender().getUsername());
+                msgMap.put("content", msg.getContent());
+                msgMap.put("type", msg.getMessageType());
+                msgMap.put("timestamp", msg.getCreatedAt().toString());
+                if (msg.getFileUrl() != null) msgMap.put("fileUrl", msg.getFileUrl());
+                if (msg.getFileName() != null) msgMap.put("fileName", msg.getFileName());
+                if (msg.getLanguage() != null) msgMap.put("language", msg.getLanguage());
+                return msgMap;
+            })
+            .collect(Collectors.toList());
+        
+        return ResponseEntity.ok(result);
     }
 }

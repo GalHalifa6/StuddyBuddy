@@ -19,9 +19,9 @@ public interface CourseRepository extends JpaRepository<Course, Long> {
     List<Course> findByNameContainingIgnoreCase(String name);
     
     List<Course> findByCodeContainingIgnoreCase(String code);
-    
+
     Boolean existsByCode(String code);
-    
+
     // Handle NULL values as false (for existing courses that don't have this field set)
     @Query("SELECT c FROM Course c WHERE c.isArchived = false OR c.isArchived IS NULL")
     List<Course> findByIsArchivedFalse();

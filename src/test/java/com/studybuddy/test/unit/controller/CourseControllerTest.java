@@ -3,8 +3,10 @@ package com.studybuddy.test.unit.controller;
 import com.studybuddy.controller.CourseController;
 import com.studybuddy.model.Course;
 import com.studybuddy.model.StudyGroup;
+import com.studybuddy.model.User;
 import com.studybuddy.repository.CourseRepository;
 import com.studybuddy.repository.StudyGroupRepository;
+import com.studybuddy.repository.UserRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -34,6 +36,15 @@ class CourseControllerTest {
 
     @Mock
     private StudyGroupRepository studyGroupRepository;
+
+    @Mock
+    private UserRepository userRepository;
+
+    @Mock
+    private org.springframework.security.core.Authentication authentication;
+
+    @Mock
+    private org.springframework.security.core.context.SecurityContext securityContext;
 
     @InjectMocks
     private CourseController courseController;
@@ -73,6 +84,16 @@ class CourseControllerTest {
     @Test
     void testGetCourseById_Success() {
         // Arrange
+        User testUser = new User();
+        testUser.setId(1L);
+        testUser.setUsername("testuser");
+        testUser.setRole(com.studybuddy.model.Role.ADMIN); // Admin can access all courses
+        testUser.setCourses(new java.util.HashSet<>());
+        
+        when(securityContext.getAuthentication()).thenReturn(authentication);
+        org.springframework.security.core.context.SecurityContextHolder.setContext(securityContext);
+        when(authentication.getName()).thenReturn("testuser");
+        when(userRepository.findByUsername("testuser")).thenReturn(java.util.Optional.of(testUser));
         when(courseRepository.findById(1L)).thenReturn(Optional.of(testCourse));
         when(studyGroupRepository.findByCourseIdAndIsActiveTrue(1L)).thenReturn(new ArrayList<>());
 
@@ -92,6 +113,16 @@ class CourseControllerTest {
     @Test
     void testGetCourseById_NotFound() {
         // Arrange
+        User testUser = new User();
+        testUser.setId(1L);
+        testUser.setUsername("testuser");
+        testUser.setRole(com.studybuddy.model.Role.ADMIN);
+        testUser.setCourses(new java.util.HashSet<>());
+        
+        when(securityContext.getAuthentication()).thenReturn(authentication);
+        org.springframework.security.core.context.SecurityContextHolder.setContext(securityContext);
+        when(authentication.getName()).thenReturn("testuser");
+        when(userRepository.findByUsername("testuser")).thenReturn(java.util.Optional.of(testUser));
         when(courseRepository.findById(1L)).thenReturn(Optional.empty());
 
         // Act

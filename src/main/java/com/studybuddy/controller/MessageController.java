@@ -3,10 +3,12 @@ package com.studybuddy.controller;
 import com.studybuddy.model.Event;
 import com.studybuddy.model.FileUpload;
 import com.studybuddy.model.Message;
+import com.studybuddy.model.MessageReceipt;
 import com.studybuddy.model.StudyGroup;
 import com.studybuddy.model.User;
 import com.studybuddy.repository.EventRepository;
 import com.studybuddy.repository.FileUploadRepository;
+import com.studybuddy.repository.MessageReceiptRepository;
 import com.studybuddy.repository.MessageRepository;
 import com.studybuddy.repository.StudyGroupRepository;
 import com.studybuddy.repository.UserRepository;
@@ -17,8 +19,10 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.LocalDateTime;
 import java.util.*;
 import java.util.stream.Collectors;
+import org.springframework.transaction.annotation.Transactional;
 
 @RestController
 @RequestMapping("/api/messages")
@@ -42,6 +46,9 @@ public class MessageController {
     @Autowired
     private SimpMessagingTemplate messagingTemplate;
 
+    @Autowired
+    private MessageReceiptRepository messageReceiptRepository;
+
     @GetMapping("/group/{groupId}")
     public ResponseEntity<List<Map<String, Object>>> getGroupMessages(@PathVariable Long groupId) {
         List<Message> messages = messageRepository.findByGroupIdOrderByCreatedAtAsc(groupId);
@@ -52,11 +59,9 @@ public class MessageController {
     }
 
     @PostMapping("/group/{groupId}")
+    @Transactional
     public ResponseEntity<?> sendMessage(@PathVariable Long groupId, @RequestBody Map<String, Object> payload) {
-        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-        User sender = userRepository.findByUsername(auth.getName())
-                .orElseThrow(() -> new RuntimeException("User not found"));
-
+        User sender = getCurrentUser();
         StudyGroup group = groupRepository.findById(groupId)
                 .orElseThrow(() -> new RuntimeException("Group not found"));
 
@@ -86,6 +91,9 @@ public class MessageController {
         }
 
         Message savedMessage = messageRepository.save(message);
+
+        // Create receipts for group members
+        createReceiptsForMessage(savedMessage, sender, group);
         
         // Broadcast the message to all subscribers of this group (use safe map)
         messagingTemplate.convertAndSend("/topic/group/" + groupId, toMessageMap(savedMessage));
@@ -95,9 +103,7 @@ public class MessageController {
 
     @PostMapping("/{id}/pin")
     public ResponseEntity<?> togglePin(@PathVariable Long id) {
-        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-        User user = userRepository.findByUsername(auth.getName())
-                .orElseThrow(() -> new RuntimeException("User not found"));
+        User user = getCurrentUser();
 
         Message message = messageRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Message not found"));
@@ -113,9 +119,7 @@ public class MessageController {
 
     @DeleteMapping("/{id}")
     public ResponseEntity<?> deleteMessage(@PathVariable Long id) {
-        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-        User user = userRepository.findByUsername(auth.getName())
-                .orElseThrow(() -> new RuntimeException("User not found"));
+        User user = getCurrentUser();
 
         Message message = messageRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Message not found"));
@@ -141,6 +145,67 @@ public class MessageController {
             .map(this::toMessageMap)
             .collect(Collectors.toList());
         return ResponseEntity.ok(result);
+    }
+
+    @GetMapping("/unread/summary")
+    public ResponseEntity<?> getUnreadSummary() {
+        User user = getCurrentUser();
+        long totalUnread = messageReceiptRepository.countUnreadForUser(user.getId());
+
+        List<Object[]> grouped = messageReceiptRepository.countUnreadByUserGrouped(user.getId());
+        List<Map<String, Object>> groups = new ArrayList<>();
+
+        for (Object[] row : grouped) {
+            Long groupId = (Long) row[0];
+            Long count = (Long) row[1];
+
+            groupRepository.findById(groupId).ifPresent(group -> {
+                Map<String, Object> groupMap = new LinkedHashMap<>();
+                groupMap.put("groupId", group.getId());
+                groupMap.put("groupName", group.getName());
+                groupMap.put("unreadCount", count.intValue());
+
+                if (group.getCourse() != null) {
+                    Map<String, Object> courseInfo = new LinkedHashMap<>();
+                    courseInfo.put("id", group.getCourse().getId());
+                    courseInfo.put("code", group.getCourse().getCode());
+                    courseInfo.put("name", group.getCourse().getName());
+                    groupMap.put("course", courseInfo);
+                }
+
+                Message lastMessage = messageRepository.findRecentMessagesByGroup(groupId)
+                        .stream()
+                        .findFirst()
+                        .orElse(null);
+
+                if (lastMessage != null) {
+                    groupMap.put("lastMessageAt", lastMessage.getCreatedAt());
+                    groupMap.put("lastMessagePreview", truncate(lastMessage.getContent(), 140));
+                }
+
+                groups.add(groupMap);
+            });
+        }
+
+        Map<String, Object> response = new LinkedHashMap<>();
+        response.put("total", (int) totalUnread);
+        response.put("groups", groups);
+        return ResponseEntity.ok(response);
+    }
+
+    @PostMapping("/group/{groupId}/read")
+    @Transactional
+    public ResponseEntity<?> markGroupAsRead(@PathVariable Long groupId) {
+        User user = getCurrentUser();
+        if (!groupRepository.isUserMemberOfGroup(groupId, user.getId())) {
+            return ResponseEntity.status(403).body("Not a member of this group");
+        }
+
+        int updated = messageReceiptRepository.markGroupAsRead(user.getId(), groupId, LocalDateTime.now());
+        Map<String, Object> response = new LinkedHashMap<>();
+        response.put("updated", updated);
+        response.put("total", (int) messageReceiptRepository.countUnreadForUser(user.getId()));
+        return ResponseEntity.ok(response);
     }
     
     /**
@@ -197,4 +262,41 @@ public class MessageController {
         
         return map;
     }
+
+            private void createReceiptsForMessage(Message message, User sender, StudyGroup group) {
+                Set<User> recipients = new HashSet<>(group.getMembers());
+                recipients.add(group.getCreator());
+
+                LocalDateTime now = LocalDateTime.now();
+                List<MessageReceipt> receipts = recipients.stream()
+                        .filter(Objects::nonNull)
+                        .map(user -> {
+                            MessageReceipt receipt = new MessageReceipt();
+                            receipt.setMessage(message);
+                            receipt.setUser(user);
+                            if (user.getId().equals(sender.getId())) {
+                                receipt.setIsRead(true);
+                                receipt.setReadAt(now);
+                            } else {
+                                receipt.setIsRead(false);
+                            }
+                            return receipt;
+                        })
+                        .collect(Collectors.toList());
+
+                messageReceiptRepository.saveAll(receipts);
+            }
+
+            private User getCurrentUser() {
+                Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+                return userRepository.findByUsername(auth.getName())
+                        .orElseThrow(() -> new RuntimeException("User not found"));
+            }
+
+            private String truncate(String content, int limit) {
+                if (content == null || content.length() <= limit) {
+                    return content;
+                }
+                return content.substring(0, Math.max(0, limit - 3)) + "...";
+            }
 }

@@ -1,4 +1,5 @@
 import api from './axios';
+import { resolveApiUrl } from '@/config/env';
 import { FileUpload } from '../types';
 
 export const fileService = {
@@ -38,12 +39,12 @@ export const fileService = {
 
   // Helper to get download URL
   getDownloadUrl: (fileId: number): string => {
-    return `http://localhost:8080/api/files/download/${fileId}`;
+    return resolveApiUrl(`/api/files/download/${fileId}`);
   },
 
   // Helper to get view URL (for inline viewing like images/PDFs)
   getViewUrl: (fileId: number): string => {
-    return `http://localhost:8080/api/files/view/${fileId}`;
+    return resolveApiUrl(`/api/files/view/${fileId}`);
   },
 
   // Format file size for display

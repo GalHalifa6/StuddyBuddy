@@ -3,7 +3,6 @@ import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import api from '../api/axios';
 import {
-  Shield,
   Search,
   Filter,
   X,
@@ -15,12 +14,6 @@ import {
   Ban,
   Loader2,
   Award,
-  GraduationCap,
-  Calendar,
-  Mail,
-  User,
-  Building,
-  BookOpen,
   Clock,
 } from 'lucide-react';
 
@@ -81,6 +74,17 @@ interface PaginatedResponse {
 const AdminExpertVerification: React.FC = () => {
   const { isAdmin } = useAuth();
   const navigate = useNavigate();
+  
+  const getErrorMessage = (error: unknown, defaultMessage: string): string => {
+    if (error && typeof error === 'object' && 'response' in error) {
+      const axiosError = error as { response?: { data?: { message?: string } } };
+      return axiosError.response?.data?.message || defaultMessage;
+    }
+    if (error instanceof Error) {
+      return error.message;
+    }
+    return defaultMessage;
+  };
   const [activeTab, setActiveTab] = useState<'pending' | 'verified'>('pending');
   const [experts, setExperts] = useState<ExpertProfile[]>([]);
   const [loading, setLoading] = useState(true);
@@ -126,8 +130,13 @@ const AdminExpertVerification: React.FC = () => {
       setTotalElements(response.data.totalElements);
       setHasNext(response.data.hasNext);
       setHasPrevious(response.data.hasPrevious);
-    } catch (err: any) {
-      setError(err.response?.data?.message || 'Failed to fetch experts');
+    } catch (err: unknown) {
+      const errorMessage = err && typeof err === 'object' && 'response' in err
+        ? (err as { response?: { data?: { message?: string } } }).response?.data?.message
+        : err instanceof Error
+        ? err.message
+        : 'Failed to fetch experts';
+      setError(errorMessage || 'Failed to fetch experts');
       console.error('Error fetching experts:', err);
     } finally {
       setLoading(false);
@@ -165,8 +174,8 @@ const AdminExpertVerification: React.FC = () => {
       const response = await api.get<ExpertProfile>(`/admin/experts/${expertId}`);
       setSelectedExpert(response.data);
       setShowProfileModal(true);
-    } catch (err: any) {
-      alert(err.response?.data?.message || 'Failed to fetch expert details');
+    } catch (err: unknown) {
+      alert(getErrorMessage(err, 'Failed to fetch expert details'));
     }
   };
 
@@ -181,8 +190,8 @@ const AdminExpertVerification: React.FC = () => {
       setSuccessMessage('Expert verified successfully');
       setTimeout(() => setSuccessMessage(null), 3000);
       fetchExperts();
-    } catch (err: any) {
-      setActionError(err.response?.data?.message || 'Failed to verify expert');
+    } catch (err: unknown) {
+      setActionError(getErrorMessage(err, 'Failed to verify expert'));
     } finally {
       setActionLoading(false);
     }
@@ -202,8 +211,8 @@ const AdminExpertVerification: React.FC = () => {
       setSuccessMessage('Expert rejected successfully');
       setTimeout(() => setSuccessMessage(null), 3000);
       fetchExperts();
-    } catch (err: any) {
-      setActionError(err.response?.data?.message || 'Failed to reject expert');
+    } catch (err: unknown) {
+      setActionError(getErrorMessage(err, 'Failed to reject expert'));
     } finally {
       setActionLoading(false);
     }
@@ -223,8 +232,8 @@ const AdminExpertVerification: React.FC = () => {
       setSuccessMessage('Expert verification revoked successfully');
       setTimeout(() => setSuccessMessage(null), 3000);
       fetchExperts();
-    } catch (err: any) {
-      setActionError(err.response?.data?.message || 'Failed to revoke verification');
+    } catch (err: unknown) {
+      setActionError(getErrorMessage(err, 'Failed to revoke verification'));
     } finally {
       setActionLoading(false);
     }

@@ -1,12 +1,10 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import React, { useState, useEffect } from 'react';
 import {
   studentExpertService,
   ExpertSearchResult,
   ExpertProfile,
   ExpertSession,
   AskQuestionRequest,
-  CreateReviewRequest,
   ExpertReview,
 } from '../api/experts';
 import { sessionService, SessionInfo } from '../api/sessions';
@@ -20,35 +18,26 @@ import {
   MessageCircle,
   Users,
   CheckCircle,
-  Filter,
   X,
   Send,
   User,
   Award,
-  Calendar,
   Clock,
-  Video,
   ExternalLink,
-  Sparkles,
-  GraduationCap,
-  HelpCircle,
-  Briefcase,
-  BookOpen,
-  TrendingUp,
-  Mail,
   Shield,
   Loader2,
   ChevronDown,
   ChevronUp,
   ThumbsUp,
+  GraduationCap,
+  Calendar,
+  HelpCircle,
+  BookOpen,
 } from 'lucide-react';
-import { useAuth } from '../context/AuthContext';
 
 type TabType = 'experts' | 'sessions' | 'questions';
 
 const ExpertsBrowse: React.FC = () => {
-  const navigate = useNavigate();
-  const { user } = useAuth();
   const [activeTab, setActiveTab] = useState<TabType>('experts');
   const [loading, setLoading] = useState(true);
   
@@ -214,8 +203,13 @@ const ExpertsBrowse: React.FC = () => {
     try {
       await sessionService.joinSession(sessionId);
       loadInitialData();
-    } catch (error: any) {
-      alert(error.response?.data?.message || 'Failed to join session');
+    } catch (error: unknown) {
+      const errorMessage = error && typeof error === 'object' && 'response' in error
+        ? (error as { response?: { data?: { message?: string } } }).response?.data?.message
+        : error instanceof Error
+        ? error.message
+        : 'Failed to join session';
+      alert(errorMessage || 'Failed to join session');
     }
   };
 
@@ -409,11 +403,11 @@ const ExpertsBrowse: React.FC = () => {
                     <div className="flex items-center gap-1">
                       <Star className="w-4 h-4 text-yellow-500 fill-yellow-500" />
                       <span className="font-semibold">{expert.averageRating?.toFixed(1) || 'N/A'}</span>
-                      <span className="text-xs">({expert.totalReviews || 0})</span>
+                      <span className="text-xs">({(expert as { totalReviews?: number }).totalReviews || 0})</span>
                     </div>
                     <div className="flex items-center gap-1">
                       <MessageCircle className="w-4 h-4" />
-                      <span>{expert.totalQuestions || 0} Q&A</span>
+                      <span>{(expert as { totalQuestions?: number }).totalQuestions || 0} Q&A</span>
                     </div>
                   </div>
 
@@ -628,7 +622,12 @@ const ExpertsBrowse: React.FC = () => {
 
             <select
               value={filterStatus}
-              onChange={(e) => setFilterStatus(e.target.value as any)}
+              onChange={(e) => {
+                const value = e.target.value;
+                if (value === 'all' || value === 'answered' || value === 'unanswered') {
+                  setFilterStatus(value);
+                }
+              }}
               className="px-4 py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 text-gray-900 dark:text-white text-sm"
             >
               <option value="all">All Questions</option>
@@ -792,7 +791,7 @@ const ExpertsBrowse: React.FC = () => {
                         <div className="flex items-center gap-1">
                           <Star className="w-5 h-5 text-yellow-500 fill-yellow-500" />
                           <span className="font-bold">{selectedExpert.averageRating?.toFixed(1) || 'N/A'}</span>
-                          <span className="text-gray-500">({selectedExpert.totalReviews || 0} reviews)</span>
+                          <span className="text-gray-500">({(selectedExpert as { totalReviews?: number }).totalReviews || 0} reviews)</span>
                         </div>
                         {selectedExpert.isVerified && (
                           <span className="inline-flex items-center gap-1 text-green-600 dark:text-green-400">

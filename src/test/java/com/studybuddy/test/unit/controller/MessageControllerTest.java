@@ -6,6 +6,7 @@ import com.studybuddy.model.Message;
 import com.studybuddy.model.StudyGroup;
 import com.studybuddy.model.User;
 import com.studybuddy.repository.FileUploadRepository;
+import com.studybuddy.repository.MessageReceiptRepository;
 import com.studybuddy.repository.MessageRepository;
 import com.studybuddy.repository.StudyGroupRepository;
 import com.studybuddy.repository.UserRepository;
@@ -49,6 +50,9 @@ class MessageControllerTest {
 
     @Mock
     private SimpMessagingTemplate messagingTemplate;
+
+    @Mock
+    private MessageReceiptRepository messageReceiptRepository;
 
     @Mock
     private Authentication authentication;
@@ -120,6 +124,7 @@ class MessageControllerTest {
         when(userRepository.findByUsername("testuser")).thenReturn(Optional.of(testUser));
         when(groupRepository.findById(1L)).thenReturn(Optional.of(testGroup));
         when(messageRepository.save(any(Message.class))).thenReturn(testMessage);
+        when(messageReceiptRepository.saveAll(anyList())).thenReturn(new ArrayList<>());
 
         // Act
         ResponseEntity<?> response = messageController.sendMessage(1L, payload);
@@ -146,6 +151,7 @@ class MessageControllerTest {
         when(groupRepository.findById(1L)).thenReturn(Optional.of(testGroup));
         when(fileUploadRepository.findById(1L)).thenReturn(Optional.of(testFile));
         when(messageRepository.save(any(Message.class))).thenReturn(testMessage);
+        when(messageReceiptRepository.saveAll(anyList())).thenReturn(new ArrayList<>());
 
         // Act
         ResponseEntity<?> response = messageController.sendMessage(1L, payload);

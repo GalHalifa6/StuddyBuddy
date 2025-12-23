@@ -66,6 +66,7 @@ class GroupControllerTest {
         testUser.setEmail("test@example.com");
         testUser.setFullName("Test User");
         testUser.setGroups(new HashSet<>());
+        testUser.setCourses(new HashSet<>());
 
         // Setup creator user
         creatorUser = new User();
@@ -114,6 +115,9 @@ class GroupControllerTest {
         courseMap.put("id", 1L);
         request.put("course", courseMap);
 
+        // Enroll user in course
+        testUser.getCourses().add(testCourse);
+        
         when(userRepository.findByUsername("testuser")).thenReturn(Optional.of(testUser));
         when(courseRepository.findById(1L)).thenReturn(Optional.of(testCourse));
         when(groupRepository.save(any(StudyGroup.class))).thenReturn(testGroup);

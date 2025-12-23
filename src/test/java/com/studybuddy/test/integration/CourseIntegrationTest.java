@@ -96,6 +96,10 @@ class CourseIntegrationTest {
         group.setIsActive(true);
         group.getMembers().add(testUser);
         groupRepository.save(group);
+
+        // Enroll test user in course
+        testUser.getCourses().add(testCourse1);
+        testUser = userRepository.save(testUser);
     }
 
     @Test

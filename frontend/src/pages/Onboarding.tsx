@@ -9,16 +9,18 @@ import {
   CheckCircle,
   Lightbulb,
   Loader2,
-  ListChecks,
+  ListChecks,                               
   RefreshCcw,
   Sparkles,
   TrendingUp
 } from 'lucide-react';
 
+
 interface OnboardingOption {
   label: string;
   value: string;
 }
+
 
 type QuestionType = 'single' | 'multi' | 'text';
 

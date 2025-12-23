@@ -12,6 +12,7 @@ import jakarta.validation.Valid;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.BadCredentialsException;
@@ -23,9 +24,12 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.validation.BindingResult;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -61,6 +65,16 @@ public class AuthController {
     @Autowired
     private GoogleAccountLinkingService linkingService;
 
+    private User resolveCurrentUser() {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication == null || !authentication.isAuthenticated() || authentication.getName() == null || "anonymousUser".equals(authentication.getName())) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "User not authenticated");
+        }
+
+        return userRepository.findByUsername(authentication.getName())
+                .orElseThrow(() -> new RuntimeException("User not found in database"));
+    }
+
     @PostMapping("/register")
     public ResponseEntity<?> registerUser(@Valid @RequestBody AuthDto.RegisterRequest request, BindingResult bindingResult) {
         // Collect validation errors
@@ -92,9 +106,14 @@ public class AuthController {
         Role role = Role.USER; // Default role
         if (request.getRole() != null && !request.getRole().isEmpty()) {
             try {
-                role = Role.valueOf(request.getRole().toUpperCase());
+                Role requestedRole = Role.valueOf(request.getRole().toUpperCase());
+                if (requestedRole == Role.ADMIN) {
+                    errors.add("Administrator accounts can only be created by the platform team.");
+                } else {
+                    role = requestedRole;
+                }
             } catch (IllegalArgumentException e) {
-                errors.add("Invalid role. Must be one of: USER, EXPERT, ADMIN");
+                errors.add("Invalid role. Must be USER or EXPERT");
             }
         }
 
@@ -119,6 +138,11 @@ public class AuthController {
         user.setIsEmailVerified(false); // Email not verified yet
         user.setTopicsOfInterest(new ArrayList<>());
         user.setPreferredLanguages(new ArrayList<>());
+        user.setQuestionnaireResponses(new HashMap<>());
+
+        boolean isStudent = role == Role.USER;
+        user.setOnboardingCompleted(!isStudent);
+        user.setOnboardingCompletedAt(isStudent ? null : LocalDateTime.now());
 
         userRepository.save(user);
 
@@ -186,7 +210,7 @@ public class AuthController {
             }
 
             // Generate JWT token
-            String jwt = jwtUtils.generateToken(userDetails);
+            String jwtToken = jwtUtils.generateToken(userDetails);
 
             // Get institution name from email domain
             String institutionName = emailDomainService.getInstitutionName(user.getEmail());
@@ -206,7 +230,8 @@ public class AuthController {
                     institutionName
             );
 
-            return ResponseEntity.ok(new AuthDto.JwtResponse(jwt, userInfo));
+            return ResponseEntity.ok(new AuthDto.JwtResponse(jwtToken, userInfo));
+
         } catch (BadCredentialsException e) {
             List<String> errors = List.of("Invalid username or password");
             return ResponseEntity.badRequest()
@@ -214,13 +239,28 @@ public class AuthController {
         }
     }
 
-    @PutMapping("/profile")
-    public ResponseEntity<?> updateProfile(@Valid @RequestBody AuthDto.UserProfileRequest request) {
-        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-        String username = authentication.getName();
+    @PostMapping("/onboarding")
+    public ResponseEntity<?> submitOnboarding(@RequestBody AuthDto.OnboardingRequest request) {
+        User user = resolveCurrentUser();
 
-        User user = userRepository.findByUsername(username)
-                .orElseThrow(() -> new RuntimeException("User not found"));
+        if (request == null) {
+            return ResponseEntity.badRequest()
+                    .body(new AuthDto.MessageResponse("Invalid onboarding payload", false));
+        }
+
+        if (request.isSkip()) {
+            user.setQuestionnaireResponses(new LinkedHashMap<>());
+        } else if (request.getResponses() != null) {
+            Map<String, String> responsesMap = request.getResponses().stream()
+                    .filter(answer -> answer.getQuestionKey() != null && answer.getAnswer() != null)
+                    .collect(Collectors.toMap(
+                            AuthDto.QuestionnaireAnswer::getQuestionKey,
+                            AuthDto.QuestionnaireAnswer::getAnswer,
+                            (existing, replacement) -> replacement,
+                            LinkedHashMap::new
+                    ));
+            user.setQuestionnaireResponses(responsesMap);
+        }
 
         if (request.getTopicsOfInterest() != null) {
             user.setTopicsOfInterest(request.getTopicsOfInterest());
@@ -238,6 +278,37 @@ public class AuthController {
             user.setCollaborationStyle(request.getCollaborationStyle());
         }
 
+        user.setOnboardingCompleted(true);
+        user.setOnboardingCompletedAt(LocalDateTime.now());
+
+        userRepository.save(user);
+
+        return ResponseEntity.ok(new AuthDto.MessageResponse("Onboarding responses saved successfully", true));
+    }
+
+    @PutMapping("/profile")
+    public ResponseEntity<?> updateProfile(@Valid @RequestBody AuthDto.UserProfileRequest request) {
+        User user = resolveCurrentUser();
+
+        if (request.getTopicsOfInterest() != null) {
+            user.setTopicsOfInterest(request.getTopicsOfInterest());
+        }
+        if (request.getProficiencyLevel() != null) {
+            user.setProficiencyLevel(request.getProficiencyLevel());
+        }
+        if (request.getPreferredLanguages() != null) {
+            user.setPreferredLanguages(request.getPreferredLanguages());
+        }
+        if (request.getAvailability() != null) {
+            user.setAvailability(request.getAvailability());
+        }
+        if (request.getCollaborationStyle() != null) {
+            user.setCollaborationStyle(request.getCollaborationStyle());
+        }
+        if (request.getQuestionnaireResponses() != null) {
+            user.setQuestionnaireResponses(new LinkedHashMap<>(request.getQuestionnaireResponses()));
+        }
+
         userRepository.save(user);
 
         return ResponseEntity.ok(new AuthDto.MessageResponse("Profile updated successfully!", true));
@@ -245,13 +316,14 @@ public class AuthController {
 
     @GetMapping("/me")
     public ResponseEntity<?> getCurrentUser() {
-        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-        String username = authentication.getName();
-
-        User user = userRepository.findByUsername(username)
-                .orElseThrow(() -> new RuntimeException("User not found"));
-
-        return ResponseEntity.ok(AuthDto.UserResponse.fromUser(user));
+        try {
+            User user = resolveCurrentUser();
+            return ResponseEntity.ok(AuthDto.UserResponse.fromUser(user));
+        } catch (RuntimeException e) {
+            // Return 401 Unauthorized if user is not authenticated
+            return ResponseEntity.status(401)
+                    .body(new AuthDto.MessageResponse("Authentication required", false));
+        }
     }
 
     /**
@@ -263,7 +335,6 @@ public class AuthController {
             return ResponseEntity.badRequest()
                     .body(new AuthDto.MessageResponse("Verification token is required", false));
         }
-
         boolean verified = emailVerificationService.verifyEmail(token);
         
         if (verified) {
@@ -294,8 +365,7 @@ public class AuthController {
                     .body(new AuthDto.MessageResponse("Invalid request", false, errors));
         }
 
-        User user = userRepository.findByEmail(request.getEmail())
-                .orElse(null);
+        User user = userRepository.findByEmail(request.getEmail()).orElse(null);
 
         if (user == null) {
             // Don't reveal if email exists or not for security
@@ -351,6 +421,7 @@ public class AuthController {
     public ResponseEntity<?> initiateGoogleLinking() {
         // Get authenticated user
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+
         if (authentication == null || !authentication.isAuthenticated()) {
             return ResponseEntity.status(401)
                     .body(new AuthDto.MessageResponse(
@@ -378,7 +449,6 @@ public class AuthController {
         String linkingToken = linkingService.generateLinkingToken(user.getId(), user.getEmail());
 
         // Build OAuth URL with linking token
-        // The frontend will redirect to this URL
         String oauthUrl = "/oauth2/authorization/google?linkToken=" + linkingToken;
 
         logger.info("Generated linking token for user: {} (ID: {})", username, user.getId());

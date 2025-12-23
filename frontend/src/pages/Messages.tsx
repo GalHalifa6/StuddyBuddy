@@ -3,12 +3,14 @@ import { Link, useNavigate } from 'react-router-dom';
 import { groupService } from '../api';
 import { StudyGroup } from '../types';
 import { useAuth } from '../context/AuthContext';
+import DirectMessages from './DirectMessages';
 import { 
   MessageSquare, 
   Search, 
   Users,
   ChevronRight,
-  CheckCheck
+  CheckCheck,
+  User
 } from 'lucide-react';
 
 interface ChatPreview {
@@ -31,6 +33,7 @@ const Messages: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [isLoading, setIsLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'all' | 'unread'>('all');
+  const [messageType, setMessageType] = useState<'group' | 'direct'>('group');
 
   const loadChats = useCallback(async () => {
     // Capture user?.id at the start to avoid stale closure issues
@@ -155,14 +158,42 @@ const Messages: React.FC = () => {
       <div className="mb-4">
         <div className="flex items-center justify-between mb-2">
           <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Messages</h1>
-          {totalUnread > 0 && (
+          {totalUnread > 0 && messageType === 'group' && (
             <span className="px-3 py-1 bg-primary-500 text-white text-sm font-bold rounded-full">
               {totalUnread} unread
             </span>
           )}
         </div>
-        <p className="text-gray-500 dark:text-gray-400">Your group conversations</p>
+        <div className="flex gap-2 mb-3">
+          <button
+            onClick={() => setMessageType('group')}
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 ${
+              messageType === 'group'
+                ? 'bg-purple-600 text-white'
+                : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
+            }`}
+          >
+            <Users className="w-4 h-4" />
+            Group Chats
+          </button>
+          <button
+            onClick={() => setMessageType('direct')}
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 ${
+              messageType === 'direct'
+                ? 'bg-purple-600 text-white'
+                : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
+            }`}
+          >
+            <User className="w-4 h-4" />
+            Direct Messages
+          </button>
+        </div>
       </div>
+
+      {messageType === 'direct' ? (
+        <DirectMessages />
+      ) : (
+        <>
 
       {/* Search & Tabs */}
       <div className="space-y-3 mb-4">
@@ -315,6 +346,8 @@ const Messages: React.FC = () => {
             </div>
           ))}
         </div>
+      )}
+        </>
       )}
     </div>
   );

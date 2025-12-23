@@ -54,11 +54,15 @@ const Settings: React.FC = () => {
       
       // Redirect to Google OAuth with linking token
       window.location.href = fullOAuthUrl;
-    } catch (error: any) {
+    } catch (error: unknown) {
       setIsLinkingGoogle(false);
-      const errorMessage = error.response?.data?.message || 
-                          error.response?.data?.errors?.[0] ||
-                          'Failed to initiate Google account linking. Please try again.';
+      let errorMessage = 'Failed to initiate Google account linking. Please try again.';
+      if (error && typeof error === 'object' && 'response' in error) {
+        const axiosError = error as { response?: { data?: { message?: string; errors?: string[] } } };
+        errorMessage = axiosError.response?.data?.message || 
+                       axiosError.response?.data?.errors?.[0] ||
+                       errorMessage;
+      }
       setLinkError(errorMessage);
     }
   };

@@ -24,6 +24,7 @@ import ExpertsBrowse from './pages/ExpertHub';
 import SessionsBrowse from './pages/SessionsBrowse';
 import SessionRoom from './pages/SessionRoom';
 import Onboarding from './pages/Onboarding';
+import SessionRequests from './pages/SessionRequests';
 import QuizOnboarding from './pages/QuizOnboarding';
 import Help from './pages/Help';
 import SendReport from './pages/SendReport';
@@ -64,6 +65,7 @@ function App() {
               <Route path="/admin/experts" element={<AdminExpertVerification />} />
               <Route path="/expert-dashboard" element={<ExpertDashboard />} />
               <Route path="/experts" element={<ExpertsBrowse />} />
+              <Route path="/session-requests" element={<SessionRequests />} />
               <Route path="/help" element={<Help />} />
               <Route path="/send-report" element={<SendReport />} />
               <Route path="/upcoming-events" element={<UpcomingEvents />} />

@@ -3,7 +3,7 @@ import { Calendar, Clock, Users, MapPin, ExternalLink, Video, Filter, BookOpen }
 import { Link } from 'react-router-dom';
 import { sessionService } from '../api/sessions';
 import { calendarService } from '../api/calendar';
-import { Event, EventType } from '../types';
+import { Event, EventType, SessionSummary } from '../types';
 
 interface UpcomingEvent {
   id: number;
@@ -31,6 +31,7 @@ const UpcomingEvents: React.FC = () => {
 
   useEffect(() => {
     fetchUpcomingEvents();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const fetchUpcomingEvents = async () => {
@@ -42,11 +43,11 @@ const UpcomingEvents: React.FC = () => {
       ]);
       
       // Transform sessions to events
-      const sessionEvents: UpcomingEvent[] = sessions.map((session: any) => ({
+      const sessionEvents: UpcomingEvent[] = sessions.map((session: SessionSummary) => ({
         id: session.id,
         type: 'session',
         title: session.title,
-        description: session.description,
+        description: (session as { description?: string }).description || '',
         startTime: session.scheduledStartTime,
         endTime: session.scheduledEndTime,
         expertName: session.expert?.fullName || 'Expert',
@@ -221,7 +222,7 @@ const UpcomingEvents: React.FC = () => {
             {['all', 'session', 'event'].map((f) => (
               <button
                 key={f}
-                onClick={() => setFilter(f as any)}
+                onClick={() => setFilter(f as 'all' | 'session' | 'group')}
                 className={`px-4 py-2 rounded-lg font-medium transition ${
                   filter === f
                     ? 'bg-indigo-600 text-white'

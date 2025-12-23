@@ -32,6 +32,10 @@ public interface ExpertQuestionRepository extends JpaRepository<ExpertQuestion, 
     // Find questions by course
     List<ExpertQuestion> findByCourseIdAndIsPublicTrueOrderByCreatedAtDesc(Long courseId);
 
+    long countByCourseIdAndIsPublicTrue(Long courseId);
+
+    List<ExpertQuestion> findTop3ByCourseIdAndIsPublicTrueOrderByCreatedAtDesc(Long courseId);
+
     // Find questions by study group
     List<ExpertQuestion> findByStudyGroupIdOrderByCreatedAtDesc(Long groupId);
 

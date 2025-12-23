@@ -96,6 +96,10 @@ class GroupIntegrationTest {
         testCourse.setSemester("Fall 2024");
         testCourse = courseRepository.save(testCourse);
 
+        // Enroll test user in course
+        testUser.getCourses().add(testCourse);
+        testUser = userRepository.save(testUser);
+
         // Create test group
         testGroup = new StudyGroup();
         testGroup.setName("Test Group");

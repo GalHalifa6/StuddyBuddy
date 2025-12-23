@@ -12,6 +12,8 @@ import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 
 import java.time.LocalDateTime;
+import java.util.HashSet;
+import java.util.Set;
 
 /**
  * Message Entity - Represents a chat message in a study group
@@ -67,4 +69,8 @@ public class Message {
     @JoinColumn(name = "group_id", nullable = false)
     @JsonIgnoreProperties({"members", "creator", "messages", "files", "hibernateLazyInitializer", "handler"})
     private StudyGroup group;
+
+    @OneToMany(mappedBy = "message", cascade = CascadeType.ALL, orphanRemoval = true)
+    @JsonIgnoreProperties({"message"})
+    private Set<MessageReceipt> receipts = new HashSet<>();
 }

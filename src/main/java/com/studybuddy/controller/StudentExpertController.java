@@ -13,6 +13,7 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -45,6 +46,18 @@ public class StudentExpertController {
 
     @Autowired
     private StudyGroupRepository groupRepository;
+
+    @Autowired
+    private com.studybuddy.repository.SessionRequestRepository sessionRequestRepository;
+
+    @Autowired
+    private com.studybuddy.service.NotificationService notificationService;
+
+    @Autowired
+    private com.studybuddy.service.MeetingService meetingService;
+
+    @Autowired
+    private QuestionVoteRepository questionVoteRepository;
 
     // ==================== Questions (Ask Expert) ====================
 
@@ -168,10 +181,12 @@ public class StudentExpertController {
     }
 
     /**
-     * Upvote a question
+     * Upvote a question - prevents duplicate voting
      */
     @PostMapping("/questions/{questionId}/upvote")
+    @org.springframework.transaction.annotation.Transactional
     public ResponseEntity<?> upvoteQuestion(@PathVariable Long questionId) {
+        User user = getCurrentUser();
         ExpertQuestion question = questionRepository.findById(questionId)
                 .orElse(null);
 
@@ -179,17 +194,66 @@ public class StudentExpertController {
             return ResponseEntity.notFound().build();
         }
 
-        question.upvote();
+        // Check if user has already voted
+        java.util.Optional<QuestionVote> existingVote = questionVoteRepository.findByQuestionIdAndUserId(questionId, user.getId());
+
+        if (existingVote.isPresent()) {
+            QuestionVote vote = existingVote.get();
+            if (vote.getVoteType() == QuestionVote.VoteType.UPVOTE) {
+                // Remove the upvote (toggle off)
+                question.setUpvotes(question.getUpvotes() - 1);
+                questionVoteRepository.delete(vote);
+                questionRepository.save(question);
+                return ResponseEntity.ok(Map.of(
+                    "upvotes", question.getUpvotes(),
+                    "netVotes", question.getNetVotes(),
+                    "hasVoted", false,
+                    "message", "Upvote removed"
+                ));
+            } else {
+                // Change from downvote to upvote
+                vote.setVoteType(QuestionVote.VoteType.UPVOTE);
+                questionVoteRepository.save(vote);
+                question.setUpvotes(question.getUpvotes() + 1);
+                question.setDownvotes(question.getDownvotes() - 1);
+                questionRepository.save(question);
+                return ResponseEntity.ok(Map.of(
+                    "upvotes", question.getUpvotes(),
+                    "netVotes", question.getNetVotes(),
+                    "hasVoted", true,
+                    "voteType", "UPVOTE",
+                    "message", "Changed to upvote"
+                ));
+            }
+        }
+
+        // Create new upvote
+        QuestionVote newVote = QuestionVote.builder()
+            .question(question)
+            .user(user)
+            .voteType(QuestionVote.VoteType.UPVOTE)
+            .build();
+        questionVoteRepository.save(newVote);
+
+        question.setUpvotes(question.getUpvotes() + 1);
         questionRepository.save(question);
 
-        return ResponseEntity.ok(Map.of("upvotes", question.getUpvotes(), "netVotes", question.getNetVotes()));
+        return ResponseEntity.ok(Map.of(
+            "upvotes", question.getUpvotes(),
+            "netVotes", question.getNetVotes(),
+            "hasVoted", true,
+            "voteType", "UPVOTE",
+            "message", "Upvoted successfully"
+        ));
     }
 
     /**
-     * Downvote a question
+     * Downvote a question - prevents duplicate voting
      */
     @PostMapping("/questions/{questionId}/downvote")
+    @org.springframework.transaction.annotation.Transactional
     public ResponseEntity<?> downvoteQuestion(@PathVariable Long questionId) {
+        User user = getCurrentUser();
         ExpertQuestion question = questionRepository.findById(questionId)
                 .orElse(null);
 
@@ -197,10 +261,57 @@ public class StudentExpertController {
             return ResponseEntity.notFound().build();
         }
 
-        question.downvote();
+        // Check if user has already voted
+        java.util.Optional<QuestionVote> existingVote = questionVoteRepository.findByQuestionIdAndUserId(questionId, user.getId());
+
+        if (existingVote.isPresent()) {
+            QuestionVote vote = existingVote.get();
+            if (vote.getVoteType() == QuestionVote.VoteType.DOWNVOTE) {
+                // Remove the downvote (toggle off)
+                question.setDownvotes(question.getDownvotes() - 1);
+                questionVoteRepository.delete(vote);
+                questionRepository.save(question);
+                return ResponseEntity.ok(Map.of(
+                    "downvotes", question.getDownvotes(),
+                    "netVotes", question.getNetVotes(),
+                    "hasVoted", false,
+                    "message", "Downvote removed"
+                ));
+            } else {
+                // Change from upvote to downvote
+                vote.setVoteType(QuestionVote.VoteType.DOWNVOTE);
+                questionVoteRepository.save(vote);
+                question.setDownvotes(question.getDownvotes() + 1);
+                question.setUpvotes(question.getUpvotes() - 1);
+                questionRepository.save(question);
+                return ResponseEntity.ok(Map.of(
+                    "downvotes", question.getDownvotes(),
+                    "netVotes", question.getNetVotes(),
+                    "hasVoted", true,
+                    "voteType", "DOWNVOTE",
+                    "message", "Changed to downvote"
+                ));
+            }
+        }
+
+        // Create new downvote
+        QuestionVote newVote = QuestionVote.builder()
+            .question(question)
+            .user(user)
+            .voteType(QuestionVote.VoteType.DOWNVOTE)
+            .build();
+        questionVoteRepository.save(newVote);
+
+        question.setDownvotes(question.getDownvotes() + 1);
         questionRepository.save(question);
 
-        return ResponseEntity.ok(Map.of("downvotes", question.getDownvotes(), "netVotes", question.getNetVotes()));
+        return ResponseEntity.ok(Map.of(
+            "downvotes", question.getDownvotes(),
+            "netVotes", question.getNetVotes(),
+            "hasVoted", true,
+            "voteType", "DOWNVOTE",
+            "message", "Downvoted successfully"
+        ));
     }
 
     /**
@@ -344,8 +455,19 @@ public class StudentExpertController {
         try {
             User student = getCurrentUser();
 
+            // Get expertId - prefer new expertId field, fallback to deprecated studentId for backward compatibility
+            Long expertIdValue = request.getExpertId();
+            if (expertIdValue == null && request.getStudentId() != null) {
+                // Backward compatibility: if expertId is not provided, use studentId
+                expertIdValue = request.getStudentId();
+            }
+
+            if (expertIdValue == null) {
+                return ResponseEntity.badRequest().body(Map.of("message", "expertId is required"));
+            }
+
             // Validate expert
-            User expert = userRepository.findById(request.getStudentId()) // Note: using studentId field for expert when booking
+            User expert = userRepository.findById(expertIdValue)
                     .orElseThrow(() -> new RuntimeException("Expert not found"));
 
             if (expert.getRole() != Role.EXPERT && expert.getRole() != Role.ADMIN) {
@@ -375,7 +497,7 @@ public class StudentExpertController {
                     .scheduledStartTime(request.getScheduledStartTime())
                     .scheduledEndTime(request.getScheduledEndTime())
                     .maxParticipants(1)
-                    .meetingPlatform(request.getMeetingPlatform())
+                    .meetingPlatform(request.getMeetingPlatform() != null ? request.getMeetingPlatform() : "JITSI")
                     .build();
 
             // Set course if provided
@@ -386,6 +508,14 @@ public class StudentExpertController {
             }
 
             ExpertSession savedSession = sessionRepository.save(session);
+            
+            // Generate Jitsi meeting link if platform is JITSI and no link provided
+            if ((savedSession.getMeetingPlatform() == null || savedSession.getMeetingPlatform().equals("JITSI")) 
+                    && (savedSession.getMeetingLink() == null || savedSession.getMeetingLink().isEmpty())) {
+                savedSession.setMeetingLink(meetingService.generateJitsiMeetingLink(savedSession.getId()));
+                savedSession = sessionRepository.save(savedSession);
+            }
+            
             return ResponseEntity.ok(toSessionResponse(savedSession));
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(Map.of("message", e.getMessage()));
@@ -559,6 +689,121 @@ public class StudentExpertController {
         return ResponseEntity.ok(Map.of("helpfulCount", review.getHelpfulCount()));
     }
 
+    // ==================== Session Requests ====================
+
+    /**
+     * Create a session request to book a 1:1 session with an expert
+     */
+    @PostMapping("/session-requests")
+    public ResponseEntity<?> createSessionRequest(@Valid @RequestBody ExpertDto.SessionRequestCreate request) {
+        try {
+            User student = getCurrentUser();
+
+            // Validate expert
+            User expert = userRepository.findById(request.getExpertId())
+                    .orElseThrow(() -> new RuntimeException("Expert not found"));
+
+            if (expert.getRole() != Role.EXPERT && expert.getRole() != Role.ADMIN) {
+                return ResponseEntity.badRequest().body(Map.of("message", "Selected user is not an expert"));
+            }
+
+            ExpertProfile expertProfile = expertProfileRepository.findByUser(expert)
+                    .orElseThrow(() -> new RuntimeException("Expert profile not found"));
+
+            if (!expertProfile.getAcceptingNewStudents()) {
+                return ResponseEntity.badRequest().body(Map.of("message", "Expert is not accepting new students"));
+            }
+
+            // Validate preferred time slots
+            if (request.getPreferredTimeSlots() == null || request.getPreferredTimeSlots().isEmpty()) {
+                return ResponseEntity.badRequest().body(Map.of("message", "At least one preferred time slot is required"));
+            }
+
+            // Convert preferred time slots to JSON
+            com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+            mapper.findAndRegisterModules();
+            String timeSlotsJson = mapper.writeValueAsString(request.getPreferredTimeSlots());
+
+            // Create session request
+            com.studybuddy.model.SessionRequest sessionRequest = com.studybuddy.model.SessionRequest.builder()
+                    .student(student)
+                    .expert(expert)
+                    .title(request.getTitle())
+                    .description(request.getDescription())
+                    .agenda(request.getAgenda())
+                    .preferredTimeSlots(timeSlotsJson)
+                    .status(com.studybuddy.model.SessionRequest.RequestStatus.PENDING)
+                    .build();
+
+            // Set course if provided
+            if (request.getCourseId() != null) {
+                Course course = courseRepository.findById(request.getCourseId())
+                        .orElseThrow(() -> new RuntimeException("Course not found"));
+                sessionRequest.setCourse(course);
+            }
+
+            com.studybuddy.model.SessionRequest savedRequest = sessionRequestRepository.save(sessionRequest);
+
+            // Notify expert
+            notificationService.createNotification(
+                    expert,
+                    "SESSION_REQUEST",
+                    "New Session Request",
+                    String.format("%s has requested a 1:1 session: %s", student.getFullName() != null ? student.getFullName() : student.getUsername(), request.getTitle()),
+                    "/experts/me/session-requests/" + savedRequest.getId()
+            );
+
+            return ResponseEntity.ok(toSessionRequestResponse(savedRequest));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("message", e.getMessage()));
+        }
+    }
+
+    /**
+     * Get my session requests (as a student)
+     */
+    @GetMapping("/session-requests/mine")
+    public ResponseEntity<List<ExpertDto.SessionRequestResponse>> getMySessionRequests() {
+        User student = getCurrentUser();
+        List<com.studybuddy.model.SessionRequest> requests = sessionRequestRepository.findByStudentIdOrderByCreatedAtDesc(student.getId());
+        return ResponseEntity.ok(requests.stream().map(this::toSessionRequestResponse).collect(Collectors.toList()));
+    }
+
+    /**
+     * Cancel a session request
+     */
+    @PostMapping("/session-requests/{requestId}/cancel")
+    public ResponseEntity<?> cancelSessionRequest(@PathVariable Long requestId) {
+        try {
+            User student = getCurrentUser();
+            com.studybuddy.model.SessionRequest request = sessionRequestRepository.findById(requestId)
+                    .orElseThrow(() -> new RuntimeException("Session request not found"));
+
+            if (!request.getStudent().getId().equals(student.getId())) {
+                return ResponseEntity.status(403).body(Map.of("message", "Not authorized"));
+            }
+
+            if (request.getStatus() != com.studybuddy.model.SessionRequest.RequestStatus.PENDING) {
+                return ResponseEntity.badRequest().body(Map.of("message", "Can only cancel pending requests"));
+            }
+
+            request.setStatus(com.studybuddy.model.SessionRequest.RequestStatus.CANCELLED);
+            sessionRequestRepository.save(request);
+
+            // Notify expert
+            notificationService.createNotification(
+                    request.getExpert(),
+                    "SESSION_REQUEST_CANCELLED",
+                    "Session Request Cancelled",
+                    String.format("%s has cancelled their session request: %s", student.getFullName() != null ? student.getFullName() : student.getUsername(), request.getTitle())
+            );
+
+            return ResponseEntity.ok(toSessionRequestResponse(request));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("message", e.getMessage()));
+        }
+    }
+
     // ==================== Helper Methods ====================
 
     private User getCurrentUser() {
@@ -683,6 +928,40 @@ public class StudentExpertController {
         return ExpertDto.GroupSummary.builder()
                 .id(group.getId())
                 .name(group.getName())
+                .build();
+    }
+
+    private ExpertDto.SessionRequestResponse toSessionRequestResponse(com.studybuddy.model.SessionRequest request) {
+        // Parse preferred time slots from JSON
+        List<ExpertDto.TimeSlot> timeSlots = new ArrayList<>();
+        if (request.getPreferredTimeSlots() != null && !request.getPreferredTimeSlots().isEmpty()) {
+            try {
+                com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+                mapper.findAndRegisterModules();
+                timeSlots = mapper.readValue(request.getPreferredTimeSlots(), 
+                    mapper.getTypeFactory().constructCollectionType(List.class, ExpertDto.TimeSlot.class));
+            } catch (Exception e) {
+                // If parsing fails, return empty list
+            }
+        }
+
+        return ExpertDto.SessionRequestResponse.builder()
+                .id(request.getId())
+                .expert(toExpertSummary(request.getExpert()))
+                .student(toStudentSummary(request.getStudent()))
+                .course(request.getCourse() != null ? toCourseSummary(request.getCourse()) : null)
+                .title(request.getTitle())
+                .description(request.getDescription())
+                .agenda(request.getAgenda())
+                .preferredTimeSlots(timeSlots)
+                .status(request.getStatus().getDisplayName())
+                .expertResponseMessage(request.getExpertResponseMessage())
+                .rejectionReason(request.getRejectionReason())
+                .chosenStart(request.getChosenStart())
+                .chosenEnd(request.getChosenEnd())
+                .createdSessionId(request.getCreatedSession() != null ? request.getCreatedSession().getId() : null)
+                .createdAt(request.getCreatedAt())
+                .updatedAt(request.getUpdatedAt())
                 .build();
     }
 }

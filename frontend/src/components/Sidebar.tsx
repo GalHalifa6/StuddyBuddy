@@ -10,7 +10,6 @@ import {
   LayoutDashboard,
   BookOpen,
   Users,
-  MessageSquare,
   Settings,
   LogOut,
   ChevronLeft,
@@ -21,12 +20,8 @@ import {
   UserCheck,
   Calendar,
   Bell,
-  HelpCircle,
-  ClipboardList,
-  Compass,
   LifeBuoy,
   Flag,
-  MoreHorizontal,
 } from 'lucide-react';
 
 interface SidebarProps {

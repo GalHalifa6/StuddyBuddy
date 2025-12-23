@@ -32,11 +32,14 @@ const VerifyEmail: React.FC = () => {
           setStatus('error');
           setMessage(response.message || 'Verification failed. Please try again.');
         }
-      } catch (error: any) {
+      } catch (error: unknown) {
         setStatus('error');
-        const errorMessage = error.response?.data?.message || 
-                           'Failed to verify email. The link may be invalid or expired.';
-        setMessage(errorMessage);
+        const errorMessage = error && typeof error === 'object' && 'response' in error
+          ? (error as { response?: { data?: { message?: string } } }).response?.data?.message
+          : error instanceof Error
+          ? error.message
+          : 'Failed to verify email. The link may be invalid or expired.';
+        setMessage(errorMessage || 'Failed to verify email. The link may be invalid or expired.');
       }
     };
 

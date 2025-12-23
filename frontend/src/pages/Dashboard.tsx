@@ -19,7 +19,6 @@ import { dashboardService, groupService, feedService } from '../api';
 import { FeedResponse } from '../api/feed';
 import {
   DashboardOverview,
-  MessageUnreadGroupSummary,
   MessageUnreadSummary,
   SessionSummary,
   StudyGroup,
@@ -79,12 +78,12 @@ const Dashboard: React.FC = () => {
   }, []);
 
   const stats = useMemo(() => {
-    const metrics = overview?.metrics ?? {};
+    const metrics = overview?.metrics ?? ({} as Record<string, number>);
 
     return [
       {
         label: 'My Groups',
-        value: metrics.myGroups ?? myGroups.length,
+        value: (metrics as Record<string, number>).myGroups ?? myGroups.length,
         icon: Users,
         color: 'from-blue-500 to-blue-600',
         bgColor: 'bg-blue-500/10',
@@ -93,7 +92,7 @@ const Dashboard: React.FC = () => {
       },
       {
         label: 'Active Courses',
-        value: metrics.enrolledCourses ?? 0,
+        value: (metrics as Record<string, number>).enrolledCourses ?? 0,
         icon: BookOpen,
         color: 'from-purple-500 to-purple-600',
         bgColor: 'bg-purple-500/10',
@@ -102,7 +101,7 @@ const Dashboard: React.FC = () => {
       },
       {
         label: 'Focus Minutes (7d)',
-        value: metrics.focusMinutesThisWeek ?? 0,
+        value: (metrics as Record<string, number>).focusMinutesThisWeek ?? 0,
         icon: Clock,
         color: 'from-emerald-500 to-emerald-600',
         bgColor: 'bg-emerald-500/10',
@@ -111,7 +110,7 @@ const Dashboard: React.FC = () => {
       },
       {
         label: 'Upcoming Sessions',
-        value: metrics.upcomingSessions ?? 0,
+        value: (metrics as Record<string, number>).upcomingSessions ?? 0,
         icon: Calendar,
         color: 'from-amber-500 to-amber-600',
         bgColor: 'bg-amber-500/10',
@@ -122,20 +121,12 @@ const Dashboard: React.FC = () => {
   }, [overview, myGroups.length]);
 
   const nextSession = overview?.nextSession ?? null;
-  const unreadSummary = overview?.unreadMessages ?? ({
+  const unreadSummary = useMemo(() => overview?.unreadMessages ?? ({
     total: 0,
     groups: [],
-  } as MessageUnreadSummary);
+  } as MessageUnreadSummary), [overview?.unreadMessages]);
   const focusMinutesThisWeek = overview?.metrics?.focusMinutesThisWeek ?? 0;
   const peersCollaborated = overview?.metrics?.studyPalsCount ?? 0;
-
-  const _unreadByGroup = useMemo(() => {
-    const map = new Map<number, MessageUnreadGroupSummary>();
-    unreadSummary.groups.forEach((group) => {
-      map.set(group.groupId, group);
-    });
-    return map;
-  }, [unreadSummary]);
 
   const getGreeting = () => {
     const hour = new Date().getHours();
@@ -220,7 +211,7 @@ const Dashboard: React.FC = () => {
                 <span className="text-sm uppercase tracking-[0.2em]">Learning hub</span>
               </div>
               <h1 className="text-3xl md:text-4xl font-semibold mb-3">
-                {getGreeting()}, {user?.firstName ?? user?.username ?? 'there'}
+                {getGreeting()}, {user?.fullName?.split(' ')[0] ?? user?.username ?? 'there'}
               </h1>
               <p className="text-indigo-100 max-w-xl leading-relaxed">
                 Here's a snapshot of your study activity. Jump into your next session, explore recommended courses, or catch up on unread conversations.

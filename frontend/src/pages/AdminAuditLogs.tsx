@@ -3,14 +3,12 @@ import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import api from '../api/axios';
 import {
-  Shield,
   Search,
   Filter,
   X,
   Eye,
   ChevronLeft,
   ChevronRight,
-  Calendar,
   Loader2,
   FileText,
 } from 'lucide-react';
@@ -98,8 +96,13 @@ const AdminAuditLogs: React.FC = () => {
       setTotalElements(response.data.totalElements);
       setHasNext(response.data.hasNext);
       setHasPrevious(response.data.hasPrevious);
-    } catch (err: any) {
-      setError(err.response?.data?.message || 'Failed to fetch audit logs');
+    } catch (err: unknown) {
+      const errorMessage = err && typeof err === 'object' && 'response' in err
+        ? (err as { response?: { data?: { message?: string } } }).response?.data?.message
+        : err instanceof Error
+        ? err.message
+        : 'Failed to fetch audit logs';
+      setError(errorMessage || 'Failed to fetch audit logs');
       console.error('Error fetching audit logs:', err);
     } finally {
       setLoading(false);

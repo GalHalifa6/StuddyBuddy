@@ -4,6 +4,32 @@ import { useNavigate } from 'react-router-dom';
 import { User, Course, StudyGroup, ROLE_LABELS, UserRole, SuspendUserRequest, BanUserRequest, DeleteUserRequest, UpdateRoleRequest, UpdateStatusRequest, CreateCourseRequest } from '../types';
 import api from '../api/axios';
 import { courseService } from '../api/courses';
+
+interface AdminStats {
+  totalUsers?: number;
+  activeUsers30d?: number;
+  activeUsers7d?: number;
+  inactiveUsers30d?: number;
+  weekOverWeekChange?: number;
+  expertCount?: number;
+  studentCount?: number;
+  newUsersThisWeek?: number;
+  suspendedUsers?: number;
+  bannedUsers?: number;
+}
+
+interface RecentActivity {
+  type: string;
+  message: string;
+  timestamp: string;
+  icon: string;
+  color: string;
+}
+
+interface CourseWithDetails extends Course {
+  groups?: StudyGroup[];
+  students?: User[];
+}
 import {
   Shield,
   Users,
@@ -25,21 +51,30 @@ import {
   Loader2,
   Ban,
   Clock,
-  Mail,
-  Calendar,
   FileText,
 } from 'lucide-react';
 
 const Admin: React.FC = () => {
   const { isAdmin, user: currentUser } = useAuth();
   const navigate = useNavigate();
+  
+  const getErrorMessage = (error: unknown, defaultMessage: string): string => {
+    if (error && typeof error === 'object' && 'response' in error) {
+      const axiosError = error as { response?: { data?: { message?: string } } };
+      return axiosError.response?.data?.message || defaultMessage;
+    }
+    if (error instanceof Error) {
+      return error.message;
+    }
+    return defaultMessage;
+  };
   const [activeTab, setActiveTab] = useState<'overview' | 'users' | 'courses' | 'groups'>('overview');
   const [users, setUsers] = useState<User[]>([]);
   const [courses, setCourses] = useState<Course[]>([]);
   const [groups, setGroups] = useState<StudyGroup[]>([]);
   const [loading, setLoading] = useState(true);
-  const [stats, setStats] = useState<any>(null);
-  const [recentActivity, setRecentActivity] = useState<any[]>([]);
+  const [stats, setStats] = useState<AdminStats | null>(null);
+  const [recentActivity, setRecentActivity] = useState<RecentActivity[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [roleFilter, setRoleFilter] = useState<string>('all');
   const [showDeleted, setShowDeleted] = useState(false);
@@ -75,7 +110,7 @@ const Admin: React.FC = () => {
     semester: '',
   });
   const [courseSearchTerm, setCourseSearchTerm] = useState('');
-  const [selectedCourse, setSelectedCourse] = useState<any>(null);
+  const [selectedCourse, setSelectedCourse] = useState<CourseWithDetails | null>(null);
   const [showCourseDetailModal, setShowCourseDetailModal] = useState(false);
   const [showEditCourseModal, setShowEditCourseModal] = useState(false);
   const [showArchiveCourseModal, setShowArchiveCourseModal] = useState(false);
@@ -83,7 +118,7 @@ const Admin: React.FC = () => {
   const [editCourseData, setEditCourseData] = useState({ name: '', description: '' });
   const [showGroupDetailModal, setShowGroupDetailModal] = useState(false);
   const [showDeleteGroupModal, setShowDeleteGroupModal] = useState(false);
-  const [selectedGroup, setSelectedGroup] = useState<any>(null);
+  const [selectedGroup, setSelectedGroup] = useState<StudyGroup | null>(null);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -114,29 +149,34 @@ const Admin: React.FC = () => {
       
       // Check for errors
       const errors: string[] = [];
-      if (usersRes.error) {
-        const status = usersRes.error.response?.status;
-        const msg = usersRes.error.response?.data?.message || usersRes.error.message;
+      if ('error' in usersRes && usersRes.error) {
+        const err = usersRes.error as { response?: { status?: number; data?: { message?: string } }; message?: string };
+        const status = err.response?.status;
+        const msg = err.response?.data?.message || err.message;
         errors.push(`Users: ${status ? `HTTP ${status}` : 'Network error'}${msg ? ` - ${msg}` : ''}`);
       }
-      if (coursesRes.error) {
-        const status = coursesRes.error.response?.status;
-        const msg = coursesRes.error.response?.data?.message || coursesRes.error.message;
+      if ('error' in coursesRes && coursesRes.error) {
+        const err = coursesRes.error as { response?: { status?: number; data?: { message?: string } }; message?: string };
+        const status = err.response?.status;
+        const msg = err.response?.data?.message || err.message;
         errors.push(`Courses: ${status ? `HTTP ${status}` : 'Network error'}${msg ? ` - ${msg}` : ''}`);
       }
-      if (groupsRes.error) {
-        const status = groupsRes.error.response?.status;
-        const msg = groupsRes.error.response?.data?.message || groupsRes.error.message;
+      if ('error' in groupsRes && groupsRes.error) {
+        const err = groupsRes.error as { response?: { status?: number; data?: { message?: string } }; message?: string };
+        const status = err.response?.status;
+        const msg = err.response?.data?.message || err.message;
         errors.push(`Groups: ${status ? `HTTP ${status}` : 'Network error'}${msg ? ` - ${msg}` : ''}`);
       }
-      if (statsRes.error) {
-        const status = statsRes.error.response?.status;
-        const msg = statsRes.error.response?.data?.message || statsRes.error.message;
+      if ('error' in statsRes && statsRes.error) {
+        const err = statsRes.error as { response?: { status?: number; data?: { message?: string } }; message?: string };
+        const status = err.response?.status;
+        const msg = err.response?.data?.message || err.message;
         errors.push(`Stats: ${status ? `HTTP ${status}` : 'Network error'}${msg ? ` - ${msg}` : ''}`);
       }
-      if (activityRes.error) {
-        const status = activityRes.error.response?.status;
-        const msg = activityRes.error.response?.data?.message || activityRes.error.message;
+      if ('error' in activityRes && activityRes.error) {
+        const err = activityRes.error as { response?: { status?: number; data?: { message?: string } }; message?: string };
+        const status = err.response?.status;
+        const msg = err.response?.data?.message || err.message;
         console.warn('Activity endpoint error:', status, msg);
         // Don't add to main errors, just log it
       }
@@ -145,14 +185,19 @@ const Admin: React.FC = () => {
         setFetchError(errors.join('; '));
       }
       
-      setUsers(usersRes.data || []);
-      setCourses(coursesRes.data || []);
-      setGroups(groupsRes.data || []);
-      setStats(statsRes.data || null);
-      setRecentActivity(activityRes.data || []);
-    } catch (error: any) {
+      setUsers('data' in usersRes ? usersRes.data : []);
+      setCourses('data' in coursesRes ? coursesRes.data : []);
+      setGroups('data' in groupsRes ? groupsRes.data : []);
+      setStats('data' in statsRes ? statsRes.data : null);
+      setRecentActivity('data' in activityRes ? activityRes.data : []);
+    } catch (error: unknown) {
       console.error('Error fetching admin data:', error);
-      setFetchError(error.response?.data?.message || error.message || 'Failed to load admin data');
+      const errorMessage = error && typeof error === 'object' && 'response' in error
+        ? (error as { response?: { data?: { message?: string } } }).response?.data?.message
+        : error instanceof Error
+        ? error.message
+        : 'Failed to load admin data';
+      setFetchError(errorMessage || 'Failed to load admin data');
     } finally {
       setLoading(false);
     }
@@ -223,8 +268,8 @@ const Admin: React.FC = () => {
       setSelectedUser(null);
       setReason('');
       fetchData();
-    } catch (error: any) {
-      setErrorMessage(error.response?.data?.message || 'Failed to change role');
+    } catch (error: unknown) {
+      setErrorMessage(getErrorMessage(error, 'Failed to change role'));
     } finally {
       setActionLoading(false);
     }
@@ -238,15 +283,15 @@ const Admin: React.FC = () => {
     setActionLoading(true);
     setErrorMessage(null);
     try {
-      const request: SuspendUserRequest = { days: suspendDays, reason };
+      const request: SuspendUserRequest = { days: suspendDays ?? undefined, reason };
       await api.post(`/admin/users/${selectedUser.id}/suspend`, request);
       setShowSuspendModal(false);
       setSelectedUser(null);
       setReason('');
       setSuspendDays(7);
       fetchData();
-    } catch (error: any) {
-      setErrorMessage(error.response?.data?.message || 'Failed to suspend user');
+    } catch (error: unknown) {
+      setErrorMessage(getErrorMessage(error, 'Failed to suspend user'));
     } finally {
       setActionLoading(false);
     }
@@ -266,8 +311,8 @@ const Admin: React.FC = () => {
       setSelectedUser(null);
       setReason('');
       fetchData();
-    } catch (error: any) {
-      setErrorMessage(error.response?.data?.message || 'Failed to ban user');
+    } catch (error: unknown) {
+      setErrorMessage(getErrorMessage(error, 'Failed to ban user'));
     } finally {
       setActionLoading(false);
     }
@@ -286,8 +331,8 @@ const Admin: React.FC = () => {
       setSelectedUser(null);
       setReason('');
       fetchData();
-    } catch (error: any) {
-      setErrorMessage(error.response?.data?.message || 'Failed to unban user');
+    } catch (error: unknown) {
+      setErrorMessage(getErrorMessage(error, 'Failed to unban user'));
     } finally {
       setActionLoading(false);
     }
@@ -313,8 +358,8 @@ const Admin: React.FC = () => {
       setSelectedUser(null);
       setReason('');
       fetchData();
-    } catch (error: any) {
-      setErrorMessage(error.response?.data?.message || 'Failed to unsuspend user');
+    } catch (error: unknown) {
+      setErrorMessage(getErrorMessage(error, 'Failed to unsuspend user'));
     } finally {
       setActionLoading(false);
     }
@@ -347,8 +392,8 @@ const Admin: React.FC = () => {
       setSelectedUser(null);
       setReason('');
       fetchData();
-    } catch (error: any) {
-      setErrorMessage(error.response?.data?.message || 'Failed to restore user');
+    } catch (error: unknown) {
+      setErrorMessage(getErrorMessage(error, 'Failed to restore user'));
     } finally {
       setActionLoading(false);
     }
@@ -375,8 +420,8 @@ const Admin: React.FC = () => {
       setSelectedUser(null);
       setReason('');
       fetchData();
-    } catch (error: any) {
-      setErrorMessage(error.response?.data?.message || 'Failed to permanently delete user');
+    } catch (error: unknown) {
+      setErrorMessage(getErrorMessage(error, 'Failed to permanently delete user'));
     } finally {
       setActionLoading(false);
     }
@@ -396,14 +441,14 @@ const Admin: React.FC = () => {
       setSelectedUser(null);
       setReason('');
       fetchData();
-    } catch (error: any) {
-      setErrorMessage(error.response?.data?.message || 'Failed to delete user');
+    } catch (error: unknown) {
+      setErrorMessage(getErrorMessage(error, 'Failed to delete user'));
     } finally {
       setActionLoading(false);
     }
   };
 
-  const handleToggleStatus = async (userId: number, currentStatus: boolean) => {
+  const handleToggleStatus = async (userId: number, _currentStatus: boolean) => {
     const user = users.find(u => u.id === userId);
     if (!user) return;
     
@@ -426,8 +471,8 @@ const Admin: React.FC = () => {
       setSelectedUser(null);
       setReason('');
       fetchData();
-    } catch (error: any) {
-      setErrorMessage(error.response?.data?.message || 'Failed to update status');
+    } catch (error: unknown) {
+      setErrorMessage(getErrorMessage(error, 'Failed to update status'));
     } finally {
       setActionLoading(false);
     }
@@ -469,8 +514,8 @@ const Admin: React.FC = () => {
       setShowAddCourseModal(false);
       setNewCourse({ code: '', name: '', description: '', faculty: '', semester: '' });
       fetchData();
-    } catch (error: any) {
-      setErrorMessage(error.response?.data?.message || 'Failed to create course');
+    } catch (error: unknown) {
+      setErrorMessage(getErrorMessage(error, 'Failed to create course'));
     } finally {
       setActionLoading(false);
     }
@@ -481,8 +526,8 @@ const Admin: React.FC = () => {
       const response = await api.get(`/admin/courses/${courseId}`);
       setSelectedCourse(response.data);
       setShowCourseDetailModal(true);
-    } catch (error: any) {
-      alert(error.response?.data?.message || 'Failed to fetch course details');
+    } catch (error: unknown) {
+      alert(getErrorMessage(error, 'Failed to fetch course details'));
     }
   };
 
@@ -507,8 +552,8 @@ const Admin: React.FC = () => {
       setReason('');
       fetchData();
       fetchCourseDetails(selectedCourse.id);
-    } catch (error: any) {
-      setErrorMessage(error.response?.data?.message || 'Failed to update course');
+    } catch (error: unknown) {
+      setErrorMessage(getErrorMessage(error, 'Failed to update course'));
     } finally {
       setActionLoading(false);
     }
@@ -527,8 +572,8 @@ const Admin: React.FC = () => {
       setReason('');
       fetchData();
       setShowCourseDetailModal(false);
-    } catch (error: any) {
-      setErrorMessage(error.response?.data?.message || 'Failed to archive course');
+    } catch (error: unknown) {
+      setErrorMessage(getErrorMessage(error, 'Failed to archive course'));
     } finally {
       setActionLoading(false);
     }
@@ -542,8 +587,8 @@ const Admin: React.FC = () => {
       if (selectedCourse && selectedCourse.id === courseId) {
         fetchCourseDetails(courseId);
       }
-    } catch (error: any) {
-      alert(error.response?.data?.message || 'Failed to unarchive course');
+    } catch (error: unknown) {
+      alert(getErrorMessage(error, 'Failed to unarchive course'));
     }
   };
 
@@ -560,8 +605,8 @@ const Admin: React.FC = () => {
       setReason('');
       setShowCourseDetailModal(false);
       fetchData();
-    } catch (error: any) {
-      setErrorMessage(error.response?.data?.message || 'Failed to delete course');
+    } catch (error: unknown) {
+      setErrorMessage(getErrorMessage(error, 'Failed to delete course'));
     } finally {
       setActionLoading(false);
     }
@@ -575,8 +620,8 @@ const Admin: React.FC = () => {
       });
       fetchCourseDetails(courseId);
       fetchData();
-    } catch (error: any) {
-      alert(error.response?.data?.message || 'Failed to remove user from course');
+    } catch (error: unknown) {
+      alert(getErrorMessage(error, 'Failed to remove user from course'));
     }
   };
 
@@ -585,8 +630,8 @@ const Admin: React.FC = () => {
       const response = await api.get(`/admin/groups/${groupId}`);
       setSelectedGroup(response.data);
       setShowGroupDetailModal(true);
-    } catch (error: any) {
-      alert(error.response?.data?.message || 'Failed to fetch group details');
+    } catch (error: unknown) {
+      alert(getErrorMessage(error, 'Failed to fetch group details'));
     }
   };
 
@@ -605,8 +650,8 @@ const Admin: React.FC = () => {
       setReason('');
       setShowGroupDetailModal(false);
       fetchData();
-    } catch (error: any) {
-      setErrorMessage(error.response?.data?.message || 'Failed to delete group');
+    } catch (error: unknown) {
+      setErrorMessage(getErrorMessage(error, 'Failed to delete group'));
     } finally {
       setActionLoading(false);
     }
@@ -626,12 +671,12 @@ const Admin: React.FC = () => {
       value: stats.totalUsers || 0,
       icon: Users,
       color: 'bg-blue-500',
-      change: stats.weekOverWeekChange > 0 
+      change: (stats.weekOverWeekChange ?? 0) > 0 
         ? `↑ ${stats.weekOverWeekChange} this week` 
-        : stats.weekOverWeekChange < 0 
-        ? `↓ ${Math.abs(stats.weekOverWeekChange)} this week`
+        : (stats.weekOverWeekChange ?? 0) < 0 
+        ? `↓ ${Math.abs(stats.weekOverWeekChange ?? 0)} this week`
         : 'No change',
-      changeColor: stats.weekOverWeekChange > 0 ? 'text-green-500' : stats.weekOverWeekChange < 0 ? 'text-red-500' : 'text-gray-500',
+      changeColor: (stats.weekOverWeekChange ?? 0) > 0 ? 'text-green-500' : (stats.weekOverWeekChange ?? 0) < 0 ? 'text-red-500' : 'text-gray-500',
     },
     {
       label: 'Active Users (30d)',
@@ -742,10 +787,10 @@ const Admin: React.FC = () => {
     if (statusFilter !== 'all') {
       switch (statusFilter) {
         case 'active':
-          matchesStatus = !u.isDeleted && !u.bannedAt && (!u.suspendedUntil || new Date(u.suspendedUntil) <= now) && u.isActive;
+          matchesStatus = !u.isDeleted && !u.bannedAt && (!u.suspendedUntil || new Date(u.suspendedUntil) <= now) && (u.isActive === true || u.isActive === undefined);
           break;
         case 'suspended':
-          matchesStatus = u.suspendedUntil && new Date(u.suspendedUntil) >= now;
+          matchesStatus = !!(u.suspendedUntil && new Date(u.suspendedUntil) >= now);
           break;
         case 'banned':
           matchesStatus = u.bannedAt !== null && u.bannedAt !== undefined;
@@ -1178,7 +1223,7 @@ const Admin: React.FC = () => {
                               <div className="flex items-center gap-2">
                                 {u.email}
                                 {u.isEmailVerified && (
-                                  <CheckCircle className="w-4 h-4 text-green-500" title="Verified" />
+                                  <CheckCircle className="w-4 h-4 text-green-500" aria-label="Verified" />
                                 )}
                               </div>
                             </td>
@@ -2506,7 +2551,7 @@ const Admin: React.FC = () => {
                   <p className="text-sm text-gray-600 mt-1">Study Groups</p>
                 </div>
                 <div className="bg-purple-50 p-4 rounded-xl">
-                  <p className="text-sm font-bold text-purple-600">{selectedCourse.groups?.length || 0}</p>
+                  <p className="text-sm font-bold text-purple-600">{selectedCourse.groupCount || 0}</p>
                   <p className="text-sm text-gray-600 mt-1">Total Groups</p>
                 </div>
               </div>
@@ -2557,10 +2602,10 @@ const Admin: React.FC = () => {
 
               {/* Groups */}
               <div>
-                <h3 className="font-semibold text-gray-900 mb-3">Study Groups ({selectedCourse.groups?.length || 0})</h3>
+                <h3 className="font-semibold text-gray-900 mb-3">Study Groups ({selectedCourse.groups?.length || selectedCourse.groupCount || 0})</h3>
                 <div className="space-y-2 max-h-60 overflow-y-auto">
                   {selectedCourse.groups && selectedCourse.groups.length > 0 ? (
-                    selectedCourse.groups.map((group: any) => (
+                    selectedCourse.groups.map((group: StudyGroup) => (
                       <div key={group.id} className="bg-gray-50 p-3 rounded-lg flex justify-between items-center">
                         <div>
                           <p className="font-medium text-gray-900">{group.name}</p>
@@ -2579,7 +2624,7 @@ const Admin: React.FC = () => {
 
               {/* Enrolled Users */}
               <div>
-                <h3 className="font-semibold text-gray-900 mb-3">Enrolled Users ({selectedCourse.students?.length || 0})</h3>
+                <h3 className="font-semibold text-gray-900 mb-3">Enrolled Users ({selectedCourse.students?.length || selectedCourse.memberCount || 0})</h3>
                 <div className="overflow-x-auto">
                   <table className="w-full">
                     <thead>
@@ -2593,7 +2638,7 @@ const Admin: React.FC = () => {
                     </thead>
                     <tbody>
                       {selectedCourse.students && selectedCourse.students.length > 0 ? (
-                        selectedCourse.students.map((student: any) => (
+                        selectedCourse.students.map((student: User) => (
                           <tr key={student.id} className="border-b border-gray-100">
                             <td className="py-2 px-3">
                               <p className="font-medium text-gray-900 text-sm">{student.fullName || student.username}</p>
@@ -2962,7 +3007,7 @@ const Admin: React.FC = () => {
                     </thead>
                     <tbody>
                       {selectedGroup.members && selectedGroup.members.length > 0 ? (
-                        selectedGroup.members.map((member: any) => (
+                        selectedGroup.members.map((member: User) => (
                           <tr key={member.id} className="border-b border-gray-100">
                             <td className="py-2 px-3">
                               <p className="font-medium text-gray-900 text-sm">{member.fullName || member.username}</p>

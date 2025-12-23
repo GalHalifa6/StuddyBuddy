@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { groupService, messageService, fileService, calendarService } from '../api';
-import { StudyGroup, Message, FileUpload, Event, EventType, CreateEventRequest } from '../types';
+import { StudyGroup, Message, FileUpload, Event, EventType, CreateEventRequest, User } from '../types';
 import { useAuth } from '../context/AuthContext';
 import { Client, IMessage } from '@stomp/stompjs';
 // @ts-expect-error - SockJS types are not available
@@ -33,7 +33,6 @@ import {
   Plus,
   MapPin,
   Clock,
-  Edit,
 } from 'lucide-react';
 
 interface ChatPreview {
@@ -86,7 +85,7 @@ const MyGroups: React.FC = () => {
   const chatFileInputRef = useRef<HTMLInputElement>(null);
   const wsClientRef = useRef<Client | null>(null);
   const subscribedGroupsRef = useRef<Set<number>>(new Set());
-  const subscriptionsRef = useRef<Map<number, any>>(new Map());
+  const subscriptionsRef = useRef<Map<number, { unsubscribe: () => void }>>(new Map());
   const [isConnected, setIsConnected] = useState(false);
 
   // WebSocket handler for real-time messages - use ref to avoid recreating subscriptions
@@ -205,6 +204,10 @@ const MyGroups: React.FC = () => {
 
     wsClientRef.current = client;
     client.activate();
+    
+    // Capture ref values at effect start to avoid stale closure warnings
+    const subscribedGroupsSnapshot = subscribedGroupsRef.current;
+    const subscriptionsSnapshot = subscriptionsRef.current;
 
     return () => {
       if (wsClientRef.current) {
@@ -212,8 +215,8 @@ const MyGroups: React.FC = () => {
         wsClientRef.current = null;
         setIsConnected(false);
       }
-      subscribedGroupsRef.current.clear();
-      subscriptionsRef.current.clear();
+      subscribedGroupsSnapshot.clear();
+      subscriptionsSnapshot.clear();
     };
   }, []); // Only run once on mount
 
@@ -255,7 +258,7 @@ const MyGroups: React.FC = () => {
         console.log('Unsubscribed from group', groupId);
       }
     });
-  }, [chats.length, isConnected]); // Re-run when connection state or number of chats changes
+  }, [chats, isConnected]); // Re-run when connection state or chats change
 
   // Load all user's groups
   const loadChats = useCallback(async () => {
@@ -308,6 +311,7 @@ const MyGroups: React.FC = () => {
     } finally {
       setIsLoading(false);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.id]);
 
   // Load messages for selected group
@@ -339,7 +343,7 @@ const MyGroups: React.FC = () => {
         )
       );
     }
-  }, [selectedGroupId, loadMessages]);
+  }, [selectedGroupId, loadMessages, setSearchParams]);
 
   useEffect(() => {
     scrollToBottom();
@@ -1023,7 +1027,7 @@ const MyGroups: React.FC = () => {
                 </div>
 
                 <div className="space-y-2">
-                  {selectedChat.group.members?.map((member: any, index: number) => (
+                  {selectedChat.group.members?.map((member: User, index: number) => (
                     <div
                       key={member.id || index}
                       className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-800 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-750 transition"
@@ -1048,7 +1052,7 @@ const MyGroups: React.FC = () => {
                             Admin
                           </span>
                         )}
-                        {member.role === 'MODERATOR' && (
+                        {(member.role as string) === 'MODERATOR' && (
                           <span className="flex items-center gap-1 px-3 py-1 bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400 rounded-full text-xs font-medium">
                             <Shield className="w-3 h-3" />
                             Moderator
@@ -1428,16 +1432,19 @@ const MyGroups: React.FC = () => {
                       location: '',
                       meetingLink: '',
                     });
-                  } catch (error: any) {
+                  } catch (error: unknown) {
                     console.error('Error creating event:', error);
                     let errorMsg = 'Failed to create event';
-                    if (error?.response?.data) {
-                      if (typeof error.response.data === 'string') {
-                        errorMsg = error.response.data;
-                      } else if (error.response.data.message) {
-                        errorMsg = error.response.data.message;
-                      } else {
-                        errorMsg = JSON.stringify(error.response.data);
+                    if (error && typeof error === 'object' && 'response' in error) {
+                      const axiosError = error as { response?: { data?: unknown } };
+                      if (axiosError.response?.data) {
+                        if (typeof axiosError.response.data === 'string') {
+                          errorMsg = axiosError.response.data;
+                        } else if (typeof axiosError.response.data === 'object' && axiosError.response.data !== null && 'message' in axiosError.response.data) {
+                          errorMsg = String((axiosError.response.data as { message: unknown }).message);
+                        } else {
+                          errorMsg = JSON.stringify(axiosError.response.data);
+                        }
                       }
                     }
                     alert('Error creating event: ' + errorMsg);
