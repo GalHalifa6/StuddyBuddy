@@ -256,7 +256,7 @@ class SessionRequestControllerTest {
         verify(sessionRepository, times(1)).save(any(ExpertSession.class));
         verify(sessionRequestRepository, times(1)).save(any(SessionRequest.class));
         assertEquals(SessionRequest.RequestStatus.APPROVED, testRequest.getStatus());
-        verify(notificationService, times(1)).createNotification(any(User.class), anyString(), anyString(), anyString());
+        verify(notificationService, times(1)).createNotification(any(User.class), anyString(), anyString(), anyString(), anyString());
     }
 
     @Test
