@@ -85,7 +85,7 @@ const MyGroups: React.FC = () => {
   const chatFileInputRef = useRef<HTMLInputElement>(null);
   const wsClientRef = useRef<Client | null>(null);
   const subscribedGroupsRef = useRef<Set<number>>(new Set());
-  const subscriptionsRef = useRef<Map<number, any>>(new Map());
+  const subscriptionsRef = useRef<Map<number, { unsubscribe: () => void }>>(new Map());
   const [isConnected, setIsConnected] = useState(false);
 
   // WebSocket handler for real-time messages - use ref to avoid recreating subscriptions
