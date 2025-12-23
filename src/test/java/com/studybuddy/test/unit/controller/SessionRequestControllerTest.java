@@ -109,7 +109,9 @@ class SessionRequestControllerTest {
         testRequest.setRejectionReason(null);
         testRequest.setChosenStart(null);
         testRequest.setChosenEnd(null);
-        testRequest.setCreatedSessionId(null);
+        testRequest.setCreatedSession(null);
+        testRequest.setCreatedAt(LocalDateTime.now());
+        testRequest.setUpdatedAt(LocalDateTime.now());
 
         // Setup security context
         when(securityContext.getAuthentication()).thenReturn(authentication);
