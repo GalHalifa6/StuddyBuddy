@@ -204,7 +204,6 @@ class SessionRequestControllerTest {
         
         when(userRepository.findByUsername("expert")).thenReturn(Optional.of(expertUser));
         when(expertProfileRepository.findByUser(expertUser)).thenReturn(Optional.of(expertProfile));
-        when(expertProfileRepository.findByUser(studentUser)).thenReturn(Optional.empty());
         when(sessionRequestRepository.findByExpertIdAndStatusOrderByCreatedAtDesc(
             2L, SessionRequest.RequestStatus.PENDING))
             .thenReturn(Arrays.asList(testRequest));
@@ -270,7 +269,7 @@ class SessionRequestControllerTest {
 
         // Assert
         assertEquals(HttpStatus.OK, response.getStatusCode());
-        verify(sessionRepository, times(1)).save(any(ExpertSession.class));
+        verify(sessionRepository, times(2)).save(any(ExpertSession.class)); // Called twice: once to save, once to update with meeting link
         verify(sessionRequestRepository, times(1)).save(any(SessionRequest.class));
         assertEquals(SessionRequest.RequestStatus.APPROVED, testRequest.getStatus());
         verify(notificationService, times(1)).createNotification(any(User.class), anyString(), anyString(), anyString(), anyString());
@@ -287,7 +286,6 @@ class SessionRequestControllerTest {
         
         when(userRepository.findByUsername("expert")).thenReturn(Optional.of(expertUser));
         when(expertProfileRepository.findByUser(expertUser)).thenReturn(Optional.of(expertProfile));
-        when(expertProfileRepository.findByUser(studentUser)).thenReturn(Optional.empty());
         when(sessionRequestRepository.findById(1L)).thenReturn(Optional.of(testRequest));
         when(sessionRequestRepository.save(any(SessionRequest.class))).thenReturn(testRequest);
         when(notificationService.createNotification(any(User.class), anyString(), anyString(), anyString()))
