@@ -196,6 +196,7 @@ class SessionRequestControllerTest {
     @Test
     void testGetExpertSessionRequests_Success() {
         // Arrange
+        when(authentication.getName()).thenReturn("expert");
         ExpertProfile expertProfile = new ExpertProfile();
         expertProfile.setUser(expertUser);
         expertProfile.setIsVerified(true);
@@ -221,6 +222,7 @@ class SessionRequestControllerTest {
     @Test
     void testApproveSessionRequest_Success() {
         // Arrange
+        when(authentication.getName()).thenReturn("expert");
         ExpertProfile expertProfile = new ExpertProfile();
         expertProfile.setUser(expertUser);
         expertProfile.setIsVerified(true);
@@ -277,6 +279,7 @@ class SessionRequestControllerTest {
     @Test
     void testRejectSessionRequest_Success() {
         // Arrange
+        when(authentication.getName()).thenReturn("expert");
         ExpertProfile expertProfile = new ExpertProfile();
         expertProfile.setUser(expertUser);
         expertProfile.setIsVerified(true);
