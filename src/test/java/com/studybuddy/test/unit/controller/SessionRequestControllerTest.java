@@ -134,21 +134,25 @@ class SessionRequestControllerTest {
         });
 
         // Act
+        java.util.List<java.util.Map<String, Object>> timeSlots = new ArrayList<>();
+        java.util.Map<String, Object> timeSlot = new java.util.HashMap<>();
+        timeSlot.put("start", java.time.LocalDateTime.now().plusDays(1).toString());
+        timeSlot.put("end", java.time.LocalDateTime.now().plusDays(1).plusHours(1).toString());
+        timeSlots.add(timeSlot);
+        
         com.studybuddy.dto.ExpertDto.SessionRequestCreate requestBody = com.studybuddy.dto.ExpertDto.SessionRequestCreate.builder()
             .expertId(2L)
             .courseId(1L)
             .title("Test Session")
             .description("Test Description")
-            .scheduledStartTime(java.time.LocalDateTime.now().plusDays(1))
-            .scheduledEndTime(java.time.LocalDateTime.now().plusDays(1).plusHours(1))
-            .preferredTimeSlots(new ArrayList<>())
+            .preferredTimeSlots(timeSlots)
             .build();
 
         ResponseEntity<?> response = studentExpertController.createSessionRequest(requestBody);
 
         // Assert
-        assertEquals(HttpStatus.OK, response.getStatusCode()); // This creates a session directly, returns OK not CREATED
-        verify(sessionRepository, times(1)).save(any(com.studybuddy.model.ExpertSession.class));
+        assertEquals(HttpStatus.CREATED, response.getStatusCode()); // createSessionRequest creates a SessionRequest, returns CREATED
+        verify(sessionRequestRepository, times(1)).save(any(com.studybuddy.model.SessionRequest.class));
         verify(notificationService, times(1)).createNotification(any(), any(), any(), any());
     }
 
