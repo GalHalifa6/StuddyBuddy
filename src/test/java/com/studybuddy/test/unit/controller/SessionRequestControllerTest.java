@@ -51,6 +51,9 @@ class SessionRequestControllerTest {
     private NotificationService notificationService;
 
     @Mock
+    private ExpertProfileRepository expertProfileRepository;
+
+    @Mock
     private Authentication authentication;
 
     @Mock
@@ -169,7 +172,13 @@ class SessionRequestControllerTest {
     @Test
     void testGetExpertSessionRequests_Success() {
         // Arrange
+        ExpertProfile expertProfile = new ExpertProfile();
+        expertProfile.setUser(expertUser);
+        expertProfile.setIsVerified(true);
+        expertProfile.setIsActive(true);
+        
         when(userRepository.findByUsername("expert")).thenReturn(Optional.of(expertUser));
+        when(expertProfileRepository.findByUser(expertUser)).thenReturn(Optional.of(expertProfile));
         when(sessionRequestRepository.findByExpertIdAndStatusOrderByCreatedAtDesc(
             2L, SessionRequest.RequestStatus.PENDING))
             .thenReturn(Arrays.asList(testRequest));

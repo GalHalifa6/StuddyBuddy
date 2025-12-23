@@ -19,7 +19,6 @@ import { dashboardService, groupService, feedService } from '../api';
 import { FeedResponse } from '../api/feed';
 import {
   DashboardOverview,
-  MessageUnreadGroupSummary,
   MessageUnreadSummary,
   SessionSummary,
   StudyGroup,

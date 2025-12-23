@@ -51,6 +51,9 @@ class MessageControllerTest {
     private SimpMessagingTemplate messagingTemplate;
 
     @Mock
+    private MessageReceiptRepository messageReceiptRepository;
+
+    @Mock
     private Authentication authentication;
 
     @Mock
@@ -120,6 +123,7 @@ class MessageControllerTest {
         when(userRepository.findByUsername("testuser")).thenReturn(Optional.of(testUser));
         when(groupRepository.findById(1L)).thenReturn(Optional.of(testGroup));
         when(messageRepository.save(any(Message.class))).thenReturn(testMessage);
+        when(messageReceiptRepository.saveAll(anyList())).thenReturn(new ArrayList<>());
 
         // Act
         ResponseEntity<?> response = messageController.sendMessage(1L, payload);
@@ -146,6 +150,7 @@ class MessageControllerTest {
         when(groupRepository.findById(1L)).thenReturn(Optional.of(testGroup));
         when(fileUploadRepository.findById(1L)).thenReturn(Optional.of(testFile));
         when(messageRepository.save(any(Message.class))).thenReturn(testMessage);
+        when(messageReceiptRepository.saveAll(anyList())).thenReturn(new ArrayList<>());
 
         // Act
         ResponseEntity<?> response = messageController.sendMessage(1L, payload);

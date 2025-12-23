@@ -138,7 +138,7 @@ class DirectMessageControllerTest {
         when(conversationRepository.findByUserIdOrderByLastMessageAtDesc(1L)).thenReturn(Arrays.asList(testConversation));
         when(directMessageRepository.findByConversationIdOrderByCreatedAtAsc(1L))
             .thenReturn(Arrays.asList(testMessage));
-        // Remove countUnreadByUserGrouped, or mock as needed if implemented
+        when(receiptRepository.countUnreadReceipts(1L, 1L)).thenReturn(0L);
 
         // Act
         ResponseEntity<?> response = directMessageController.getConversations();

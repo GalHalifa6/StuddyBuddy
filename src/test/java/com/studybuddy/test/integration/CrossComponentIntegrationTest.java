@@ -126,6 +126,12 @@ class CrossComponentIntegrationTest {
         testCourse.setFaculty("Engineering");
         testCourse.setSemester("Fall 2024");
         testCourse = courseRepository.save(testCourse);
+
+        // Enroll users in course
+        user1.getCourses().add(testCourse);
+        user1 = userRepository.save(user1);
+        user2.getCourses().add(testCourse);
+        user2 = userRepository.save(user2);
     }
 
     @Test
