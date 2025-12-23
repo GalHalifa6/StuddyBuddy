@@ -47,7 +47,7 @@ const UpcomingEvents: React.FC = () => {
         id: session.id,
         type: 'session',
         title: session.title,
-        description: session.description || '',
+        description: (session as { description?: string }).description || '',
         startTime: session.scheduledStartTime,
         endTime: session.scheduledEndTime,
         expertName: session.expert?.fullName || 'Expert',

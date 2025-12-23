@@ -787,7 +787,7 @@ const Admin: React.FC = () => {
     if (statusFilter !== 'all') {
       switch (statusFilter) {
         case 'active':
-          matchesStatus = !u.isDeleted && !u.bannedAt && (!u.suspendedUntil || new Date(u.suspendedUntil) <= now) && (u.isActive === true);
+          matchesStatus = !u.isDeleted && !u.bannedAt && (!u.suspendedUntil || new Date(u.suspendedUntil) <= now) && (u.isActive === true || u.isActive === undefined);
           break;
         case 'suspended':
           matchesStatus = u.suspendedUntil && new Date(u.suspendedUntil) >= now;
