@@ -9,6 +9,7 @@ import com.studybuddy.model.Role;
 import com.studybuddy.model.StudyGroup;
 import com.studybuddy.model.User;
 import com.studybuddy.repository.AdminAuditLogRepository;
+import com.studybuddy.repository.CharacteristicProfileRepository;
 import com.studybuddy.repository.CourseRepository;
 import com.studybuddy.repository.ExpertProfileRepository;
 import com.studybuddy.repository.StudyGroupRepository;
@@ -43,6 +44,9 @@ public class AdminService {
 
     @Autowired
     private ExpertProfileRepository expertProfileRepository;
+
+    @Autowired
+    private CharacteristicProfileRepository characteristicProfileRepository;
 
     @Autowired
     private AdminAuditLogRepository auditLogRepository;
@@ -354,6 +358,11 @@ public class AdminService {
         // This must happen before user deletion
         expertProfileRepository.deleteByUserId(userId);
         entityManager.flush(); // Force immediate commit of profile deletion
+        
+        // STEP 1.5: Delete CharacteristicProfile to avoid foreign key constraint violation
+        // This must happen before user deletion
+        characteristicProfileRepository.findByUserId(userId).ifPresent(characteristicProfileRepository::delete);
+        entityManager.flush(); // Force immediate commit of characteristic profile deletion
         
         // STEP 2: Delete study groups created by the user
         // First, find all study groups created by this user

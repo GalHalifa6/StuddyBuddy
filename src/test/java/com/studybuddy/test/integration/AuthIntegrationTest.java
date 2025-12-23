@@ -68,7 +68,7 @@ class AuthIntegrationTest {
         testUser.setFullName("Test User");
         testUser.setRole(Role.USER);
         testUser.setIsActive(true);
-        testUser.setEmailVerified(true); // Set as verified for login tests
+        testUser.setIsEmailVerified(true); // Set as verified for login tests
         userRepository.save(testUser);
     }
 

@@ -60,6 +60,9 @@ const Settings: React.FC = () => {
                           error.response?.data?.errors?.[0] ||
                           'Failed to initiate Google account linking. Please try again.';
       setLinkError(errorMessage);
+    }
+  };
+
   useEffect(() => {
     loadQuizProfile();
   }, []);

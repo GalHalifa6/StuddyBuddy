@@ -51,6 +51,8 @@ class AdminControllerTest {
 
     @Mock
     private ExpertProfileRepository expertProfileRepository;
+
+    @Mock
     private AdminService adminService;
 
     @InjectMocks
@@ -246,21 +248,8 @@ class AdminControllerTest {
     @Test
     void testPermanentDeleteUser_Success() {
         // Arrange
-        when(userRepository.findById(1L)).thenReturn(Optional.of(testUser));
-        doNothing().when(emailVerificationTokenRepository).deleteByUserId(anyLong());
-        doNothing().when(notificationRepository).deleteByUserId(anyLong());
-        doNothing().when(groupMemberRequestRepository).deleteByUserId(anyLong());
-        doNothing().when(groupMemberRequestRepository).deleteByInvitedById(anyLong());
-        doNothing().when(groupMemberRequestRepository).deleteByRespondedById(anyLong());
-        doNothing().when(questionVoteRepository).deleteByUserId(anyLong());
-        doNothing().when(sessionParticipantRepository).deleteByUserId(anyLong());
-        doNothing().when(expertProfileRepository).deleteByUserId(anyLong());
-        doNothing().when(userRepository).delete(any(User.class));
         AdminController.DeleteRequest request = new AdminController.DeleteRequest();
         request.setReason("Test reason");
-        
-        testUser.setIsDeleted(true);
-        testUser.setDeletedAt(java.time.LocalDateTime.now().minusDays(31));
         
         doNothing().when(adminService).permanentDeleteUser(1L, "Test reason");
 
@@ -273,15 +262,12 @@ class AdminControllerTest {
         assertTrue(response.getBody() instanceof AuthDto.MessageResponse);
         AuthDto.MessageResponse messageResponse = (AuthDto.MessageResponse) response.getBody();
         assertTrue(messageResponse.isSuccess());
-        verify(userRepository, times(1)).findById(1L);
-        verify(userRepository, times(1)).delete(any(User.class));
         verify(adminService, times(1)).permanentDeleteUser(1L, "Test reason");
     }
 
     @Test
     void testPermanentDeleteUser_NotFound() {
         // Arrange
-        when(userRepository.findById(1L)).thenReturn(Optional.empty());
         AdminController.DeleteRequest request = new AdminController.DeleteRequest();
         request.setReason("Test reason");
         
@@ -293,8 +279,7 @@ class AdminControllerTest {
 
         // Assert
         assertEquals(HttpStatus.NOT_FOUND, response.getStatusCode());
-        verify(userRepository, times(1)).findById(1L);
-        verify(userRepository, never()).delete(any(User.class));
+        verify(adminService, times(1)).permanentDeleteUser(1L, "Test reason");
     }
 }
 

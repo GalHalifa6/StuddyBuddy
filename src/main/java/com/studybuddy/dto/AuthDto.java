@@ -155,7 +155,7 @@ public class AuthDto {
                 user.getFullName(),
                 user.getRole() != null ? user.getRole().name() : null,
                 user.getIsActive(),
-                user.getEmailVerified(),
+                user.getIsEmailVerified(),
                 user.getGoogleSub(), // Expose googleSub to frontend
                 user.getTopicsOfInterest(),
                 user.getProficiencyLevel(),

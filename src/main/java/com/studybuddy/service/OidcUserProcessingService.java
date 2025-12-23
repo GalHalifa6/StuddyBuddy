@@ -38,7 +38,7 @@ public class OidcUserProcessingService {
         
         // Link Google account
         user.setGoogleSub(googleSub);
-        user.setEmailVerified(true); // Google verified the email
+        user.setIsEmailVerified(true); // Google verified the email
         
         // Update name if missing
         if (user.getFullName() == null || user.getFullName().isEmpty()) {
@@ -66,7 +66,7 @@ public class OidcUserProcessingService {
     public void updateExistingOidcUser(User user, String fullName) {
         logger.info("Updating existing OIDC user: {}", user.getEmail());
         
-        user.setEmailVerified(true);
+        user.setIsEmailVerified(true);
         if (user.getFullName() == null || user.getFullName().isEmpty()) {
             user.setFullName(fullName);
         }

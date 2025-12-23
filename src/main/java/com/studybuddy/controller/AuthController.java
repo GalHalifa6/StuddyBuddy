@@ -116,7 +116,7 @@ public class AuthController {
         user.setFullName(request.getFullName());
         user.setRole(role);
         user.setIsActive(true);
-        user.setEmailVerified(false); // Email not verified yet
+        user.setIsEmailVerified(false); // Email not verified yet
         user.setTopicsOfInterest(new ArrayList<>());
         user.setPreferredLanguages(new ArrayList<>());
 
@@ -160,7 +160,7 @@ public class AuthController {
                     .orElseThrow(() -> new RuntimeException("User not found"));
 
             // Check if email is verified (only for manual registration users)
-            if (!user.getEmailVerified() && user.getGoogleSub() == null) {
+            if (!user.getIsEmailVerified() && user.getGoogleSub() == null) {
                 List<String> errors = List.of("Please verify your email address before logging in. Check your inbox for the verification link.");
                 return ResponseEntity.status(403)
                         .body(new AuthDto.MessageResponse(
@@ -171,16 +171,6 @@ public class AuthController {
                         ));
             }
 
-            // Generate JWT token
-            String jwt = jwtUtils.generateToken(userDetails);
-
-            // Get institution name from email domain
-            String institutionName = emailDomainService.getInstitutionName(user.getEmail());
-
-            // Create user info response
-            AuthDto.UserInfo userInfo = new AuthDto.UserInfo(
-                    user.getId(),
-                    user.getUsername(),
             // Check if user can login (not banned, suspended, deleted, or inactive)
             if (!user.canLogin()) {
                 String errorMessage = "Account is not active";
@@ -195,18 +185,24 @@ public class AuthController {
                         .body(new AuthDto.MessageResponse("Login failed: " + errorMessage, false, List.of(errorMessage)));
             }
 
+            // Generate JWT token
+            String jwt = jwtUtils.generateToken(userDetails);
+
+            // Get institution name from email domain
+            String institutionName = emailDomainService.getInstitutionName(user.getEmail());
+
             // Update last login timestamp
             user.setLastLoginAt(LocalDateTime.now());
             userRepository.save(user);
 
-            return ResponseEntity.ok(new AuthDto.JwtResponse(
-                    jwt, 
-                    user.getId(), 
-                    user.getUsername(), 
+            // Create UserInfo object
+            AuthDto.UserInfo userInfo = new AuthDto.UserInfo(
+                    user.getId(),
+                    user.getUsername(),
                     user.getEmail(),
                     user.getRole().name(),
                     user.getFullName(),
-                    user.getEmailVerified(),
+                    user.getIsEmailVerified(),
                     institutionName
             );
 
@@ -310,7 +306,7 @@ public class AuthController {
         }
 
         // Check if already verified
-        if (user.getEmailVerified()) {
+        if (user.getIsEmailVerified()) {
             return ResponseEntity.badRequest()
                     .body(new AuthDto.MessageResponse(
                             "This email is already verified. You can log in directly.", 

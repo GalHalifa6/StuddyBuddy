@@ -88,7 +88,7 @@ public class EmailVerificationService {
 
                 // Mark user's email as verified
                 User user = token.getUser();
-                user.setEmailVerified(true);
+                user.setIsEmailVerified(true);
                 userRepository.save(user);
 
                 return true;

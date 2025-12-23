@@ -328,7 +328,7 @@ public class DataInitializer implements CommandLineRunner {
         admin.setFullName("System Administrator");
         admin.setRole(Role.ADMIN);
         admin.setIsActive(true);
-        admin.setEmailVerified(true); // Admin is pre-verified
+        admin.setIsEmailVerified(true); // Admin is pre-verified
         admin.setProficiencyLevel("advanced");
         admin.setCollaborationStyle("balanced");
         admin.setTopicsOfInterest(new ArrayList<>());
@@ -344,7 +344,7 @@ public class DataInitializer implements CommandLineRunner {
         expert.setFullName("Dr. Yossi Cohen");
         expert.setRole(Role.EXPERT);
         expert.setIsActive(true);
-        expert.setEmailVerified(true); // Demo users are pre-verified
+        expert.setIsEmailVerified(true); // Demo users are pre-verified
         expert.setProficiencyLevel("advanced");
         expert.setCollaborationStyle("discussion_heavy");
         expert.setTopicsOfInterest(new ArrayList<>(List.of("Algorithms", "Data Structures", "Software Engineering")));
@@ -360,7 +360,7 @@ public class DataInitializer implements CommandLineRunner {
         expert.setFullName("Prof. Rachel Levi");
         expert.setRole(Role.EXPERT);
         expert.setIsActive(true);
-        expert.setEmailVerified(true); // Demo users are pre-verified
+        expert.setIsEmailVerified(true); // Demo users are pre-verified
         expert.setProficiencyLevel("advanced");
         expert.setCollaborationStyle("balanced");
         expert.setTopicsOfInterest(new ArrayList<>(List.of("Mathematics", "Calculus", "Linear Algebra")));
@@ -376,7 +376,7 @@ public class DataInitializer implements CommandLineRunner {
         student.setFullName("Sarah Ben-David");
         student.setRole(Role.USER);
         student.setIsActive(true);
-        student.setEmailVerified(true); // Demo users are pre-verified
+        student.setIsEmailVerified(true); // Demo users are pre-verified
         student.setProficiencyLevel("intermediate");
         student.setCollaborationStyle("discussion_heavy");
         student.setTopicsOfInterest(new ArrayList<>(List.of("Computer Science", "Mathematics")));
@@ -392,7 +392,7 @@ public class DataInitializer implements CommandLineRunner {
         student.setFullName("David Mizrachi");
         student.setRole(Role.USER);
         student.setIsActive(true);
-        student.setEmailVerified(true); // Demo users are pre-verified
+        student.setIsEmailVerified(true); // Demo users are pre-verified
         student.setProficiencyLevel("beginner");
         student.setCollaborationStyle("quiet_focus");
         student.setTopicsOfInterest(new ArrayList<>(List.of("Web Development", "Mathematics")));
@@ -408,7 +408,7 @@ public class DataInitializer implements CommandLineRunner {
         student.setFullName("Maya Goldstein");
         student.setRole(Role.USER);
         student.setIsActive(true);
-        student.setEmailVerified(true); // Demo users are pre-verified
+        student.setIsEmailVerified(true); // Demo users are pre-verified
         student.setProficiencyLevel("advanced");
         student.setCollaborationStyle("balanced");
         student.setTopicsOfInterest(new ArrayList<>(List.of("Programming", "Physics", "Web Development")));
@@ -911,6 +911,7 @@ public class DataInitializer implements CommandLineRunner {
         student.setFullName(fullName);
         student.setRole(Role.USER);
         student.setIsActive(true);
+        student.setIsEmailVerified(true); // Demo users are pre-verified
         student.setProficiencyLevel("intermediate");
         student.setCollaborationStyle("balanced");
         student.setTopicsOfInterest(new ArrayList<>(List.of("Technology", "Mathematics", "Psychology")));

@@ -91,7 +91,7 @@ public class OAuth2UserServiceImpl extends DefaultOAuth2UserService {
         if (userOptional.isPresent()) {
             // Existing user with matching googleSub - update and verify
             user = userOptional.get();
-            user.setEmailVerified(true);
+            user.setIsEmailVerified(true);
             if (user.getFullName() == null || user.getFullName().isEmpty()) {
                 user.setFullName(name != null ? name : givenName);
             }
@@ -114,7 +114,7 @@ public class OAuth2UserServiceImpl extends DefaultOAuth2UserService {
             user = new User();
             user.setEmail(email);
             user.setGoogleSub(googleSub);
-            user.setEmailVerified(true); // Google verified it
+            user.setIsEmailVerified(true); // Google verified it
             user.setFullName(name != null ? name : givenName);
             user.setUsername(generateUsername(email));
             user.setPassword(null); // No password for OAuth users

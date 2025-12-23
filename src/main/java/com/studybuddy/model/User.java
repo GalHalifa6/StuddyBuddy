@@ -56,10 +56,6 @@ public class User {
     @Column(unique = true, nullable = true)
     private String googleSub;
 
-    // Email verification status
-    @Column(nullable = false)
-    private Boolean emailVerified = false;
-
     private String fullName;
 
     @Enumerated(EnumType.STRING)

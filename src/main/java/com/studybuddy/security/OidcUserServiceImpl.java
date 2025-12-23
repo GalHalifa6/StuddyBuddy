@@ -12,6 +12,8 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.oauth2.client.oidc.userinfo.OidcUserRequest;
 import org.springframework.security.oauth2.client.oidc.userinfo.OidcUserService;
+import org.springframework.context.annotation.Lazy;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.oauth2.core.OAuth2AuthenticationException;
 import org.springframework.security.oauth2.core.OAuth2Error;
 import org.springframework.security.oauth2.core.oidc.user.OidcUser;
@@ -43,6 +45,10 @@ public class OidcUserServiceImpl extends OidcUserService {
 
     @Autowired
     private OidcUserProcessingService oidcUserProcessingService;
+
+    @Autowired
+    @Lazy
+    private PasswordEncoder passwordEncoder;
 
     @Override
     public OidcUser loadUser(OidcUserRequest userRequest) throws OAuth2AuthenticationException {
@@ -202,10 +208,12 @@ public class OidcUserServiceImpl extends OidcUserService {
                 user = new User();
                 user.setEmail(email);
                 user.setGoogleSub(googleSub);
-                user.setEmailVerified(true); // Google verified it
+                user.setIsEmailVerified(true); // Google verified it
                 user.setFullName(name != null ? name : givenName);
                 user.setUsername(generateUsername(email));
-                user.setPassword(null); // No password for OAuth users
+                // Set a placeholder password that can't be used for login
+                // OAuth users should only authenticate via OAuth, not password
+                user.setPassword(passwordEncoder.encode("OAUTH_USER_PLACEHOLDER_" + googleSub));
                 user.setRole(Role.USER);
                 user.setIsActive(true);
                 user.setTopicsOfInterest(new ArrayList<>());

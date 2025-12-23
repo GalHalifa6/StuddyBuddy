@@ -78,7 +78,7 @@ class AuthControllerTest {
         testUser.setFullName("Test User");
         testUser.setRole(Role.USER);
         testUser.setIsActive(true);
-        testUser.setEmailVerified(true); // Add email verification
+        testUser.setIsEmailVerified(true); // Add email verification
 
         registerRequest = new AuthDto.RegisterRequest();
         registerRequest.setUsername("newuser");
@@ -303,7 +303,7 @@ class AuthControllerTest {
     @Test
     void testLogin_EmailNotVerified() {
         // Arrange
-        testUser.setEmailVerified(false); // Email not verified
+        testUser.setIsEmailVerified(false); // Email not verified
         testUser.setGoogleSub(null); // Manual registration user
         
         when(bindingResult.hasErrors()).thenReturn(false);

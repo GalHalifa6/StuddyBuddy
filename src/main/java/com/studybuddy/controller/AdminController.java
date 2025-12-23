@@ -70,6 +70,9 @@ public class AdminController {
     private ExpertProfileRepository expertProfileRepository;
 
     @Autowired
+    private CharacteristicProfileRepository characteristicProfileRepository;
+
+    @Autowired
     private AdminService adminService;
 
     @Autowired
@@ -83,9 +86,6 @@ public class AdminController {
 
     @Autowired
     private AdminAuditLogRepository auditLogRepository;
-
-    @Autowired
-    private ExpertProfileRepository expertProfileRepository;
 
     @GetMapping("/stats")
     public ResponseEntity<Map<String, Object>> getStatistics() {
@@ -338,12 +338,18 @@ public class AdminController {
         // 6. Delete expert profile (if exists)
         expertProfileRepository.deleteByUserId(id);
         
+        // 6.5. Delete characteristic profile (if exists)
+        characteristicProfileRepository.findByUserId(id).ifPresent(characteristicProfileRepository::delete);
+        
         // 7. Finally, delete the user
         // Note: Other relationships like messages, files, createdGroups are handled by cascade delete
         // Many-to-many relationships (courses, groups) will be automatically removed when user is deleted
         userRepository.delete(user);
         
         return ResponseEntity.ok(new AuthDto.MessageResponse("User deleted successfully", true));
+    }
+
+    @DeleteMapping("/users/{id}/permanent")
     public ResponseEntity<?> permanentDeleteUser(@PathVariable Long id, @RequestBody DeleteRequest request) {
         try {
             adminService.permanentDeleteUser(id, request.getReason());
