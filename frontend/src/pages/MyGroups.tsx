@@ -211,10 +211,11 @@ const MyGroups: React.FC = () => {
         wsClientRef.current = null;
         setIsConnected(false);
       }
-      const subscribedGroups = subscribedGroupsRef.current;
-      const subscriptions = subscriptionsRef.current;
-      subscribedGroups.clear();
-      subscriptions.clear();
+      // Capture ref values at cleanup time to avoid stale closure warnings
+      const subscribedGroupsSnapshot = subscribedGroupsRef.current;
+      const subscriptionsSnapshot = subscriptionsRef.current;
+      subscribedGroupsSnapshot.clear();
+      subscriptionsSnapshot.clear();
     };
   }, []); // Only run once on mount
 
