@@ -139,6 +139,7 @@ const Groups: React.FC = () => {
             maxSize: match.maxSize,
             memberCount: match.currentSize,
             members: [], // Will be populated if needed
+            isActive: true, // Default to true for matched groups
             course: match.courseId ? {
               id: match.courseId,
               name: match.courseName || '',
