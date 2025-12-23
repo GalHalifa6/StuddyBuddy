@@ -204,6 +204,10 @@ const MyGroups: React.FC = () => {
 
     wsClientRef.current = client;
     client.activate();
+    
+    // Capture ref values at effect start to avoid stale closure warnings
+    const subscribedGroupsSnapshot = subscribedGroupsRef.current;
+    const subscriptionsSnapshot = subscriptionsRef.current;
 
     return () => {
       if (wsClientRef.current) {
@@ -211,9 +215,6 @@ const MyGroups: React.FC = () => {
         wsClientRef.current = null;
         setIsConnected(false);
       }
-      // Capture ref values at cleanup time to avoid stale closure warnings
-      const subscribedGroupsSnapshot = subscribedGroupsRef.current;
-      const subscriptionsSnapshot = subscriptionsRef.current;
       subscribedGroupsSnapshot.clear();
       subscriptionsSnapshot.clear();
     };
