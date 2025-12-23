@@ -1,6 +1,9 @@
 // Role types
 export type UserRole = 'USER' | 'EXPERT' | 'ADMIN';
 
+// Quiz types
+export type QuizStatus = 'NOT_STARTED' | 'IN_PROGRESS' | 'COMPLETED' | 'SKIPPED';
+
 export const ROLE_LABELS: Record<UserRole, string> = {
   USER: 'Student',
   EXPERT: 'Subject Expert',
@@ -146,14 +149,17 @@ export interface StudyGroup {
   isActive: boolean;
   createdAt: string;
   updatedAt?: string;
-  course: Course;
-  creator: User;
+  course?: Course;
+  creator?: User;
   members: User[];
   // For private group limited info
   memberCount?: number;
   isPrivate?: boolean;
   canJoin?: boolean;
   message?: string;
+  // Match scoring from backend
+  matchPercentage?: number;
+  matchReason?: string;
 }
 
 export interface CreateGroupRequest {
@@ -214,18 +220,60 @@ export interface Notification {
 export interface Message {
   id: number;
   content: string;
-  messageType: 'text' | 'file' | 'system';
+  messageType: 'text' | 'file' | 'system' | 'event';
   isPinned: boolean;
   createdAt: string;
   sender: User;
   group: StudyGroup;
   attachedFile?: FileUpload;
+  event?: Event;
+  eventId?: number;
 }
 
 export interface SendMessageRequest {
   content: string;
   messageType?: string;
   fileId?: number;
+  eventId?: number;
+}
+
+// Event types
+export type EventType = 
+  | 'STUDY_SESSION' 
+  | 'MEETING' 
+  | 'EXAM' 
+  | 'ASSIGNMENT_DUE' 
+  | 'PROJECT_DEADLINE' 
+  | 'PRESENTATION' 
+  | 'REVIEW_SESSION' 
+  | 'OTHER';
+
+export interface Event {
+  id: number;
+  title: string;
+  description?: string;
+  eventType: EventType;
+  startDateTime: string;
+  endDateTime?: string;
+  location?: string;
+  meetingLink?: string;
+  creatorId: number;
+  creatorName: string;
+  groupId: number;
+  groupName: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateEventRequest {
+  title: string;
+  description?: string;
+  eventType: EventType;
+  startDateTime: string;
+  endDateTime?: string;
+  location?: string;
+  meetingLink?: string;
+  groupId: number;
 }
 
 // Profile update request
