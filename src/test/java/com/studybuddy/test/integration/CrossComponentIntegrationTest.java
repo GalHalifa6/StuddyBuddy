@@ -329,6 +329,20 @@ class CrossComponentIntegrationTest {
             registeredUser.setIsEmailVerified(true);
             userRepository.save(registeredUser);
         }
+        
+        // Refresh user to get updated email verification status
+        entityManager.flush();
+        entityManager.clear();
+        registeredUser = userRepository.findByUsername("newuser")
+                .orElseThrow(() -> new RuntimeException("User not found after verification"));
+
+        // Enroll user in course before creating group
+        if (testCourse != null && registeredUser.getCourses() != null) {
+            registeredUser.getCourses().add(testCourse);
+            userRepository.save(registeredUser);
+            entityManager.flush();
+            entityManager.clear();
+        }
 
         // 3. Login
         AuthDto.LoginRequest loginRequest = new AuthDto.LoginRequest();

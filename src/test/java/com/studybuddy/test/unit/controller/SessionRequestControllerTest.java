@@ -165,7 +165,7 @@ class SessionRequestControllerTest {
         // Assert
         assertEquals(HttpStatus.OK, response.getStatusCode()); // createSessionRequest returns ok() not CREATED
         verify(sessionRequestRepository, times(1)).save(any(com.studybuddy.model.SessionRequest.class));
-        verify(notificationService, times(1)).createNotification(any(), any(), any(), any());
+        verify(notificationService, times(1)).createNotification(any(User.class), anyString(), anyString(), anyString(), anyString());
     }
 
     @Test
@@ -276,7 +276,8 @@ class SessionRequestControllerTest {
         when(expertProfileRepository.findByUser(expertUser)).thenReturn(Optional.of(expertProfile));
         when(sessionRequestRepository.findById(1L)).thenReturn(Optional.of(testRequest));
         when(sessionRequestRepository.save(any(SessionRequest.class))).thenReturn(testRequest);
-        doNothing().when(notificationService).createNotification(any(), any(), any(), any());
+        when(notificationService.createNotification(any(User.class), anyString(), anyString(), anyString()))
+            .thenReturn(new com.studybuddy.model.Notification());
 
         ExpertDto.SessionRequestReject requestBody = ExpertDto.SessionRequestReject.builder()
             .reason("Not available at requested times")
