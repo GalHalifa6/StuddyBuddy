@@ -16,13 +16,15 @@ import Messages from './pages/Messages';
 import Settings from './pages/Settings';
 import Admin from './pages/Admin';
 import ExpertDashboard from './pages/ExpertDashboard';
-import ExpertsBrowse from './pages/ExpertsBrowse';
+import ExpertsBrowse from './pages/ExpertHub';
 import SessionsBrowse from './pages/SessionsBrowse';
 import SessionRoom from './pages/SessionRoom';
-import MyQuestions from './pages/MyQuestions';
-import Questions from './pages/Questions';
-import PublicQA from './pages/PublicQA';
 import Onboarding from './pages/Onboarding';
+import QuizOnboarding from './pages/QuizOnboarding';
+import Help from './pages/Help';
+import SendReport from './pages/SendReport';
+import UpcomingEvents from './pages/UpcomingEvents';
+import MyGroups from './pages/MyGroups';
 
 function App() {
   return (
@@ -54,9 +56,10 @@ function App() {
               <Route path="/admin" element={<Admin />} />
               <Route path="/expert-dashboard" element={<ExpertDashboard />} />
               <Route path="/experts" element={<ExpertsBrowse />} />
-              <Route path="/questions" element={<Questions />} />
-              <Route path="/my-questions" element={<MyQuestions />} />
-              <Route path="/qa" element={<PublicQA />} />
+              <Route path="/help" element={<Help />} />
+              <Route path="/send-report" element={<SendReport />} />
+              <Route path="/upcoming-events" element={<UpcomingEvents />} />
+              <Route path="/my-groups" element={<MyGroups />} />
             </Route>
 
             <Route
@@ -64,6 +67,15 @@ function App() {
               element={
                 <ProtectedRoute>
                   <Onboarding />
+                </ProtectedRoute>
+              }
+            />
+
+            <Route
+              path="/quiz-onboarding"
+              element={
+                <ProtectedRoute>
+                  <QuizOnboarding />
                 </ProtectedRoute>
               }
             />
