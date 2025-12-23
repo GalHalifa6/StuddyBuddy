@@ -105,6 +105,11 @@ class SessionRequestControllerTest {
         testRequest.setStatus(SessionRequest.RequestStatus.PENDING);
         // preferredTimeSlots is a JSON string in the model, so set as needed for controller logic
         testRequest.setPreferredTimeSlots("[]");
+        testRequest.setExpertResponseMessage(null);
+        testRequest.setRejectionReason(null);
+        testRequest.setChosenStart(null);
+        testRequest.setChosenEnd(null);
+        testRequest.setCreatedSessionId(null);
 
         // Setup security context
         when(securityContext.getAuthentication()).thenReturn(authentication);
@@ -156,7 +161,7 @@ class SessionRequestControllerTest {
         ResponseEntity<?> response = studentExpertController.createSessionRequest(requestBody);
 
         // Assert
-        assertEquals(HttpStatus.CREATED, response.getStatusCode()); // createSessionRequest creates a SessionRequest, returns CREATED
+        assertEquals(HttpStatus.OK, response.getStatusCode()); // createSessionRequest returns ok() not CREATED
         verify(sessionRequestRepository, times(1)).save(any(com.studybuddy.model.SessionRequest.class));
         verify(notificationService, times(1)).createNotification(any(), any(), any(), any());
     }
@@ -228,6 +233,7 @@ class SessionRequestControllerTest {
         when(userRepository.findByUsername("expert")).thenReturn(Optional.of(expertUser));
         when(expertProfileRepository.findByUser(expertUser)).thenReturn(Optional.of(expertProfile));
         when(sessionRequestRepository.findById(1L)).thenReturn(Optional.of(testRequest));
+        when(sessionRepository.hasSchedulingConflict(anyLong(), any(), any())).thenReturn(false);
         when(meetingService.generateJitsiMeetingLink(anyLong())).thenReturn("https://meet.jit.si/test-room");
         when(sessionRepository.save(any(ExpertSession.class))).thenAnswer(invocation -> {
             ExpertSession session = invocation.getArgument(0);
@@ -268,6 +274,7 @@ class SessionRequestControllerTest {
         when(expertProfileRepository.findByUser(expertUser)).thenReturn(Optional.of(expertProfile));
         when(sessionRequestRepository.findById(1L)).thenReturn(Optional.of(testRequest));
         when(sessionRequestRepository.save(any(SessionRequest.class))).thenReturn(testRequest);
+        doNothing().when(notificationService).createNotification(any(), any(), any(), any());
 
         ExpertDto.SessionRequestReject requestBody = ExpertDto.SessionRequestReject.builder()
             .reason("Not available at requested times")

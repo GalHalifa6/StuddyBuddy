@@ -171,12 +171,12 @@ class DirectMessageControllerTest {
         // Arrange
         when(userRepository.findByUsername("user1")).thenReturn(Optional.of(currentUser));
         when(conversationRepository.findById(1L)).thenReturn(Optional.of(testConversation));
+        when(conversationRepository.save(any(Conversation.class))).thenReturn(testConversation);
         when(directMessageRepository.save(any(DirectMessage.class))).thenAnswer(invocation -> {
             DirectMessage msg = invocation.getArgument(0);
             msg.setId(2L);
             return msg;
         });
-        when(userRepository.findById(2L)).thenReturn(Optional.of(otherUser));
         when(receiptRepository.save(any(DirectMessageReceipt.class)))
             .thenAnswer(invocation -> invocation.getArgument(0));
 
