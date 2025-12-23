@@ -69,7 +69,8 @@ public class CourseController {
 
     @GetMapping
     public ResponseEntity<List<Map<String, Object>>> getAllCourses() {
-        List<Course> courses = courseRepository.findAll();
+        // Only show non-archived courses to regular users
+        List<Course> allCourses = courseRepository.findByIsArchivedFalse();
         User currentUser = null;
         try {
             currentUser = getCurrentUser();
@@ -79,6 +80,8 @@ public class CourseController {
         final Set<Long> enrolledCourseIds = currentUser != null
                 ? currentUser.getCourses().stream().map(Course::getId).collect(Collectors.toSet())
                 : Collections.<Long>emptySet();
+        
+        List<Course> courses = allCourses;
         
         // Add group count to each course
         List<Map<String, Object>> result = courses.stream().map(course -> {
@@ -148,7 +151,11 @@ public class CourseController {
 
     @GetMapping("/search")
     public ResponseEntity<List<Map<String, Object>>> searchCourses(@RequestParam String query) {
-        List<Course> courses = courseRepository.findByNameContainingIgnoreCase(query);
+        // Only search non-archived courses
+        List<Course> allCourses = courseRepository.findByNameContainingIgnoreCase(query);
+        List<Course> courses = allCourses.stream()
+                .filter(course -> course.getIsArchived() == null || !course.getIsArchived())
+                .collect(Collectors.toList());
         User currentUser = null;
         try {
             currentUser = getCurrentUser();

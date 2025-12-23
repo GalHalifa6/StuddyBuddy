@@ -21,5 +21,9 @@ public interface CourseRepository extends JpaRepository<Course, Long> {
 
     Boolean existsByCode(String code);
 
-
+    // Handle NULL values as false (for existing courses that don't have this field set)
+    @Query("SELECT c FROM Course c WHERE c.isArchived = false OR c.isArchived IS NULL")
+    List<Course> findByIsArchivedFalse();
+    
+    List<Course> findByIsArchivedTrue();
 }

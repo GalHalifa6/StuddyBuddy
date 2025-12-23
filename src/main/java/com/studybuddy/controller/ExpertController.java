@@ -60,6 +60,32 @@ public class ExpertController {
     @Autowired
     private com.studybuddy.repository.SessionRequestRepository sessionRequestRepository;
 
+    /**
+     * Helper method to check if current expert is verified
+     * Throws exception if not verified (except for admins)
+     * This should be called at the start of expert-only endpoints
+     */
+    private void ensureExpertIsVerified() {
+        User currentUser = getCurrentUser();
+        
+        // Admins can always access
+        if (currentUser.getRole() == Role.ADMIN) {
+            return;
+        }
+        
+        // Check if expert has a profile
+        ExpertProfile profile = expertProfileRepository.findByUser(currentUser).orElse(null);
+        
+        if (profile == null) {
+            throw new RuntimeException("Expert profile not found. Please complete your profile first.");
+        }
+        
+        // Check if expert is verified
+        if (profile.getIsVerified() == null || !profile.getIsVerified()) {
+            throw new RuntimeException("Your expert account is pending verification. Please wait for admin approval before using expert features.");
+        }
+    }
+
     // ==================== Expert Profile Endpoints ====================
 
     /**

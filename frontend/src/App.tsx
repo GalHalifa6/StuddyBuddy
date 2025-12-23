@@ -7,6 +7,8 @@ import Layout from './components/Layout';
 // Pages
 import Login from './pages/Login';
 import Register from './pages/Register';
+import VerifyEmail from './pages/VerifyEmail';
+import GoogleCallback from './pages/GoogleCallback';
 import Dashboard from './pages/Dashboard';
 import Courses from './pages/Courses';
 import CourseDetail from './pages/CourseDetail';
@@ -15,15 +17,19 @@ import GroupDetail from './pages/GroupDetail';
 import Messages from './pages/Messages';
 import Settings from './pages/Settings';
 import Admin from './pages/Admin';
+import AdminAuditLogs from './pages/AdminAuditLogs';
+import AdminExpertVerification from './pages/AdminExpertVerification';
 import ExpertDashboard from './pages/ExpertDashboard';
-import ExpertsBrowse from './pages/ExpertsBrowse';
+import ExpertsBrowse from './pages/ExpertHub';
 import SessionsBrowse from './pages/SessionsBrowse';
 import SessionRoom from './pages/SessionRoom';
-import MyQuestions from './pages/MyQuestions';
-import Questions from './pages/Questions';
-import PublicQA from './pages/PublicQA';
 import Onboarding from './pages/Onboarding';
 import SessionRequests from './pages/SessionRequests';
+import QuizOnboarding from './pages/QuizOnboarding';
+import Help from './pages/Help';
+import SendReport from './pages/SendReport';
+import UpcomingEvents from './pages/UpcomingEvents';
+import MyGroups from './pages/MyGroups';
 
 function App() {
   return (
@@ -34,6 +40,8 @@ function App() {
             {/* Public routes */}
             <Route path="/login" element={<Login />} />
             <Route path="/register" element={<Register />} />
+            <Route path="/verify-email" element={<VerifyEmail />} />
+            <Route path="/auth/google/callback" element={<GoogleCallback />} />
 
             {/* Protected routes */}
             <Route
@@ -53,12 +61,15 @@ function App() {
               <Route path="/messages" element={<Messages />} />
               <Route path="/settings" element={<Settings />} />
               <Route path="/admin" element={<Admin />} />
+              <Route path="/admin/audit" element={<AdminAuditLogs />} />
+              <Route path="/admin/experts" element={<AdminExpertVerification />} />
               <Route path="/expert-dashboard" element={<ExpertDashboard />} />
               <Route path="/experts" element={<ExpertsBrowse />} />
-              <Route path="/questions" element={<Questions />} />
-              <Route path="/my-questions" element={<MyQuestions />} />
-              <Route path="/qa" element={<PublicQA />} />
               <Route path="/session-requests" element={<SessionRequests />} />
+              <Route path="/help" element={<Help />} />
+              <Route path="/send-report" element={<SendReport />} />
+              <Route path="/upcoming-events" element={<UpcomingEvents />} />
+              <Route path="/my-groups" element={<MyGroups />} />
             </Route>
 
             <Route
@@ -66,6 +77,15 @@ function App() {
               element={
                 <ProtectedRoute>
                   <Onboarding />
+                </ProtectedRoute>
+              }
+            />
+
+            <Route
+              path="/quiz-onboarding"
+              element={
+                <ProtectedRoute>
+                  <QuizOnboarding />
                 </ProtectedRoute>
               }
             />
