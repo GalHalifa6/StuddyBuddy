@@ -96,10 +96,10 @@ const Dashboard: React.FC = () => {
   }, [overview, myGroups.length]);
 
   const nextSession = overview?.nextSession ?? null;
-  const unreadSummary = overview?.unreadMessages ?? ({
+  const unreadSummary = useMemo(() => overview?.unreadMessages ?? ({
     total: 0,
     groups: [],
-  } as MessageUnreadSummary);
+  } as MessageUnreadSummary), [overview?.unreadMessages]);
   const courseHighlights = overview?.courseHighlights ?? [];
   const focusMinutesThisWeek = overview?.metrics?.focusMinutesThisWeek ?? 0;
   const peersCollaborated = overview?.metrics?.studyPalsCount ?? 0;

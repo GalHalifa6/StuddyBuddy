@@ -8,11 +8,7 @@ import { useSessionWebSocket, SessionMessage, WhiteboardDrawData } from '../hook
 import { JitsiMeetEmbed } from '../components/JitsiMeetEmbed';
 import {
   Video,
-  VideoOff,
-  Mic,
   MicOff,
-  Monitor,
-  MonitorOff,
   MessageCircle,
   FileText,
   Clock,
@@ -92,10 +88,10 @@ const SessionRoom: React.FC = () => {
   const [studentRating, setStudentRating] = useState(0);
   const [copiedCode, setCopiedCode] = useState(false);
   
-  // Media state for Jitsi
-  const [isMuted, setIsMuted] = useState(false);
-  const [isVideoOn, setIsVideoOn] = useState(true);
-  const [isScreenSharing, setIsScreenSharing] = useState(false);
+  // Media state for Jitsi - reserved for future use
+  // const [isMuted, setIsMuted] = useState(false);
+  // const [isVideoOn, setIsVideoOn] = useState(true);
+  // const [isScreenSharing, setIsScreenSharing] = useState(false);
   
   // Chat state
   const [messages, setMessages] = useState<ChatMessage[]>([]);

@@ -22,7 +22,6 @@ interface JitsiMeetEmbedProps {
 export const JitsiMeetEmbed: React.FC<JitsiMeetEmbedProps> = ({
   roomName,
   displayName,
-  config = {},
   style,
   className,
 }) => {
