@@ -1052,7 +1052,7 @@ const MyGroups: React.FC = () => {
                             Admin
                           </span>
                         )}
-                        {member.role === 'MODERATOR' && (
+                        {(member.role as string) === 'MODERATOR' && (
                           <span className="flex items-center gap-1 px-3 py-1 bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400 rounded-full text-xs font-medium">
                             <Shield className="w-3 h-3" />
                             Moderator

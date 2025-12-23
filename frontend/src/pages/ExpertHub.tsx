@@ -29,6 +29,10 @@ import {
   ChevronDown,
   ChevronUp,
   ThumbsUp,
+  GraduationCap,
+  Calendar,
+  HelpCircle,
+  BookOpen,
 } from 'lucide-react';
 
 type TabType = 'experts' | 'sessions' | 'questions';
@@ -399,11 +403,11 @@ const ExpertsBrowse: React.FC = () => {
                     <div className="flex items-center gap-1">
                       <Star className="w-4 h-4 text-yellow-500 fill-yellow-500" />
                       <span className="font-semibold">{expert.averageRating?.toFixed(1) || 'N/A'}</span>
-                      <span className="text-xs">({expert.totalReviews || 0})</span>
+                      <span className="text-xs">({(expert as { totalReviews?: number }).totalReviews || 0})</span>
                     </div>
                     <div className="flex items-center gap-1">
                       <MessageCircle className="w-4 h-4" />
-                      <span>{expert.totalQuestions || 0} Q&A</span>
+                      <span>{(expert as { totalQuestions?: number }).totalQuestions || 0} Q&A</span>
                     </div>
                   </div>
 
@@ -787,7 +791,7 @@ const ExpertsBrowse: React.FC = () => {
                         <div className="flex items-center gap-1">
                           <Star className="w-5 h-5 text-yellow-500 fill-yellow-500" />
                           <span className="font-bold">{selectedExpert.averageRating?.toFixed(1) || 'N/A'}</span>
-                          <span className="text-gray-500">({selectedExpert.totalReviews || 0} reviews)</span>
+                          <span className="text-gray-500">({(selectedExpert as { totalReviews?: number }).totalReviews || 0} reviews)</span>
                         </div>
                         {selectedExpert.isVerified && (
                           <span className="inline-flex items-center gap-1 text-green-600 dark:text-green-400">

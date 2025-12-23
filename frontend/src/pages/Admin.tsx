@@ -9,9 +9,13 @@ interface AdminStats {
   totalUsers?: number;
   activeUsers30d?: number;
   activeUsers7d?: number;
+  inactiveUsers30d?: number;
   weekOverWeekChange?: number;
   expertCount?: number;
   studentCount?: number;
+  newUsersThisWeek?: number;
+  suspendedUsers?: number;
+  bannedUsers?: number;
 }
 
 interface RecentActivity {
@@ -20,6 +24,11 @@ interface RecentActivity {
   timestamp: string;
   icon: string;
   color: string;
+}
+
+interface CourseWithDetails extends Course {
+  groups?: StudyGroup[];
+  students?: User[];
 }
 import {
   Shield,
@@ -101,7 +110,7 @@ const Admin: React.FC = () => {
     semester: '',
   });
   const [courseSearchTerm, setCourseSearchTerm] = useState('');
-  const [selectedCourse, setSelectedCourse] = useState<Course | null>(null);
+  const [selectedCourse, setSelectedCourse] = useState<CourseWithDetails | null>(null);
   const [showCourseDetailModal, setShowCourseDetailModal] = useState(false);
   const [showEditCourseModal, setShowEditCourseModal] = useState(false);
   const [showArchiveCourseModal, setShowArchiveCourseModal] = useState(false);
@@ -140,29 +149,34 @@ const Admin: React.FC = () => {
       
       // Check for errors
       const errors: string[] = [];
-      if (usersRes.error) {
-        const status = usersRes.error.response?.status;
-        const msg = usersRes.error.response?.data?.message || usersRes.error.message;
+      if ('error' in usersRes && usersRes.error) {
+        const err = usersRes.error as { response?: { status?: number; data?: { message?: string } }; message?: string };
+        const status = err.response?.status;
+        const msg = err.response?.data?.message || err.message;
         errors.push(`Users: ${status ? `HTTP ${status}` : 'Network error'}${msg ? ` - ${msg}` : ''}`);
       }
-      if (coursesRes.error) {
-        const status = coursesRes.error.response?.status;
-        const msg = coursesRes.error.response?.data?.message || coursesRes.error.message;
+      if ('error' in coursesRes && coursesRes.error) {
+        const err = coursesRes.error as { response?: { status?: number; data?: { message?: string } }; message?: string };
+        const status = err.response?.status;
+        const msg = err.response?.data?.message || err.message;
         errors.push(`Courses: ${status ? `HTTP ${status}` : 'Network error'}${msg ? ` - ${msg}` : ''}`);
       }
-      if (groupsRes.error) {
-        const status = groupsRes.error.response?.status;
-        const msg = groupsRes.error.response?.data?.message || groupsRes.error.message;
+      if ('error' in groupsRes && groupsRes.error) {
+        const err = groupsRes.error as { response?: { status?: number; data?: { message?: string } }; message?: string };
+        const status = err.response?.status;
+        const msg = err.response?.data?.message || err.message;
         errors.push(`Groups: ${status ? `HTTP ${status}` : 'Network error'}${msg ? ` - ${msg}` : ''}`);
       }
-      if (statsRes.error) {
-        const status = statsRes.error.response?.status;
-        const msg = statsRes.error.response?.data?.message || statsRes.error.message;
+      if ('error' in statsRes && statsRes.error) {
+        const err = statsRes.error as { response?: { status?: number; data?: { message?: string } }; message?: string };
+        const status = err.response?.status;
+        const msg = err.response?.data?.message || err.message;
         errors.push(`Stats: ${status ? `HTTP ${status}` : 'Network error'}${msg ? ` - ${msg}` : ''}`);
       }
-      if (activityRes.error) {
-        const status = activityRes.error.response?.status;
-        const msg = activityRes.error.response?.data?.message || activityRes.error.message;
+      if ('error' in activityRes && activityRes.error) {
+        const err = activityRes.error as { response?: { status?: number; data?: { message?: string } }; message?: string };
+        const status = err.response?.status;
+        const msg = err.response?.data?.message || err.message;
         console.warn('Activity endpoint error:', status, msg);
         // Don't add to main errors, just log it
       }
@@ -171,11 +185,11 @@ const Admin: React.FC = () => {
         setFetchError(errors.join('; '));
       }
       
-      setUsers(usersRes.data || []);
-      setCourses(coursesRes.data || []);
-      setGroups(groupsRes.data || []);
-      setStats(statsRes.data || null);
-      setRecentActivity(activityRes.data || []);
+      setUsers('data' in usersRes ? usersRes.data : []);
+      setCourses('data' in coursesRes ? coursesRes.data : []);
+      setGroups('data' in groupsRes ? groupsRes.data : []);
+      setStats('data' in statsRes ? statsRes.data : null);
+      setRecentActivity('data' in activityRes ? activityRes.data : []);
     } catch (error: unknown) {
       console.error('Error fetching admin data:', error);
       const errorMessage = error && typeof error === 'object' && 'response' in error
@@ -269,7 +283,7 @@ const Admin: React.FC = () => {
     setActionLoading(true);
     setErrorMessage(null);
     try {
-      const request: SuspendUserRequest = { days: suspendDays, reason };
+      const request: SuspendUserRequest = { days: suspendDays ?? undefined, reason };
       await api.post(`/admin/users/${selectedUser.id}/suspend`, request);
       setShowSuspendModal(false);
       setSelectedUser(null);
@@ -657,12 +671,12 @@ const Admin: React.FC = () => {
       value: stats.totalUsers || 0,
       icon: Users,
       color: 'bg-blue-500',
-      change: stats.weekOverWeekChange > 0 
+      change: (stats.weekOverWeekChange ?? 0) > 0 
         ? `↑ ${stats.weekOverWeekChange} this week` 
-        : stats.weekOverWeekChange < 0 
-        ? `↓ ${Math.abs(stats.weekOverWeekChange)} this week`
+        : (stats.weekOverWeekChange ?? 0) < 0 
+        ? `↓ ${Math.abs(stats.weekOverWeekChange ?? 0)} this week`
         : 'No change',
-      changeColor: stats.weekOverWeekChange > 0 ? 'text-green-500' : stats.weekOverWeekChange < 0 ? 'text-red-500' : 'text-gray-500',
+      changeColor: (stats.weekOverWeekChange ?? 0) > 0 ? 'text-green-500' : (stats.weekOverWeekChange ?? 0) < 0 ? 'text-red-500' : 'text-gray-500',
     },
     {
       label: 'Active Users (30d)',
@@ -773,7 +787,7 @@ const Admin: React.FC = () => {
     if (statusFilter !== 'all') {
       switch (statusFilter) {
         case 'active':
-          matchesStatus = !u.isDeleted && !u.bannedAt && (!u.suspendedUntil || new Date(u.suspendedUntil) <= now) && u.isActive;
+          matchesStatus = !u.isDeleted && !u.bannedAt && (!u.suspendedUntil || new Date(u.suspendedUntil) <= now) && (u.isActive === true);
           break;
         case 'suspended':
           matchesStatus = u.suspendedUntil && new Date(u.suspendedUntil) >= now;
@@ -2537,7 +2551,7 @@ const Admin: React.FC = () => {
                   <p className="text-sm text-gray-600 mt-1">Study Groups</p>
                 </div>
                 <div className="bg-purple-50 p-4 rounded-xl">
-                  <p className="text-sm font-bold text-purple-600">{selectedCourse.groups?.length || 0}</p>
+                  <p className="text-sm font-bold text-purple-600">{selectedCourse.groupCount || 0}</p>
                   <p className="text-sm text-gray-600 mt-1">Total Groups</p>
                 </div>
               </div>
@@ -2588,7 +2602,7 @@ const Admin: React.FC = () => {
 
               {/* Groups */}
               <div>
-                <h3 className="font-semibold text-gray-900 mb-3">Study Groups ({selectedCourse.groups?.length || 0})</h3>
+                <h3 className="font-semibold text-gray-900 mb-3">Study Groups ({selectedCourse.groups?.length || selectedCourse.groupCount || 0})</h3>
                 <div className="space-y-2 max-h-60 overflow-y-auto">
                   {selectedCourse.groups && selectedCourse.groups.length > 0 ? (
                     selectedCourse.groups.map((group: StudyGroup) => (
@@ -2610,7 +2624,7 @@ const Admin: React.FC = () => {
 
               {/* Enrolled Users */}
               <div>
-                <h3 className="font-semibold text-gray-900 mb-3">Enrolled Users ({selectedCourse.students?.length || 0})</h3>
+                <h3 className="font-semibold text-gray-900 mb-3">Enrolled Users ({selectedCourse.students?.length || selectedCourse.memberCount || 0})</h3>
                 <div className="overflow-x-auto">
                   <table className="w-full">
                     <thead>

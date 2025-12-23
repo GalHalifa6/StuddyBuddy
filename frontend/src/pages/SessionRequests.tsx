@@ -172,7 +172,7 @@ const SessionRequests: React.FC = () => {
                   <div className="flex items-center gap-4 text-sm text-gray-600 dark:text-gray-400 mb-3">
                     <span className="flex items-center gap-1">
                       <User className="w-4 h-4" />
-                      {request.expert?.fullName || request.expert?.username || 'Expert'}
+                      {request.expert?.fullName || 'Expert'}
                     </span>
                     {request.course && (
                       <span className="flex items-center gap-1">

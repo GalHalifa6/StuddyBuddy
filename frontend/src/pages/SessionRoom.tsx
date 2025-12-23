@@ -1034,7 +1034,7 @@ const SessionRoom: React.FC = () => {
                             <span className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></span>
                           </span>
                         </div>
-                        {rightPerson.isMe && isMuted && (
+                        {rightPerson.isMe && false && (
                           <div className="absolute top-4 left-4">
                             <span className="bg-red-500/80 p-1.5 rounded-full"><MicOff className="w-3 h-3 text-white" /></span>
                           </div>

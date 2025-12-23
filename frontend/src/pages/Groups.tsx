@@ -15,7 +15,8 @@ import {
   Shield,
   BookOpen,
   SlidersHorizontal,
-  TrendingUp
+  TrendingUp,
+  Sparkles,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
