@@ -41,6 +41,15 @@ class DirectMessageControllerTest {
     private UserRepository userRepository;
 
     @Mock
+    private FileUploadRepository fileUploadRepository;
+
+    @Mock
+    private org.springframework.messaging.simp.SimpMessagingTemplate messagingTemplate;
+
+    @Mock
+    private com.studybuddy.service.NotificationService notificationService;
+
+    @Mock
     private Authentication authentication;
 
     @Mock
