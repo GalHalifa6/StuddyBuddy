@@ -210,6 +210,7 @@ class SessionRequestControllerTest {
         
         when(userRepository.findByUsername("expert")).thenReturn(Optional.of(expertUser));
         when(expertProfileRepository.findByUser(expertUser)).thenReturn(Optional.of(expertProfile));
+        when(expertProfileRepository.findByUser(studentUser)).thenReturn(Optional.empty());
         when(sessionRequestRepository.findByExpertIdAndStatusOrderByCreatedAtDesc(
             2L, SessionRequest.RequestStatus.PENDING))
             .thenReturn(Arrays.asList(testRequest));
@@ -234,6 +235,7 @@ class SessionRequestControllerTest {
         
         when(userRepository.findByUsername("expert")).thenReturn(Optional.of(expertUser));
         when(expertProfileRepository.findByUser(expertUser)).thenReturn(Optional.of(expertProfile));
+        when(expertProfileRepository.findByUser(studentUser)).thenReturn(Optional.empty());
         when(sessionRequestRepository.findById(1L)).thenReturn(Optional.of(testRequest));
         when(sessionRepository.hasSchedulingConflict(anyLong(), any(), any())).thenReturn(false);
         when(meetingService.generateJitsiMeetingLink(anyLong())).thenReturn("https://meet.jit.si/test-room");
@@ -274,6 +276,7 @@ class SessionRequestControllerTest {
         
         when(userRepository.findByUsername("expert")).thenReturn(Optional.of(expertUser));
         when(expertProfileRepository.findByUser(expertUser)).thenReturn(Optional.of(expertProfile));
+        when(expertProfileRepository.findByUser(studentUser)).thenReturn(Optional.empty());
         when(sessionRequestRepository.findById(1L)).thenReturn(Optional.of(testRequest));
         when(sessionRequestRepository.save(any(SessionRequest.class))).thenReturn(testRequest);
         when(notificationService.createNotification(any(User.class), anyString(), anyString(), anyString()))
