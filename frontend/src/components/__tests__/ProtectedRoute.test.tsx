@@ -1,10 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import ProtectedRoute from '../ProtectedRoute';
 
 // Mock the useAuth hook
 const mockUseAuth = vi.fn();
+
+// Mock the quiz API
+const mockGetOnboardingStatus = vi.fn();
 
 vi.mock('../../context/AuthContext', async () => {
   const actual = await vi.importActual('../../context/AuthContext');
@@ -14,16 +17,29 @@ vi.mock('../../context/AuthContext', async () => {
   };
 });
 
+vi.mock('../../api/quiz', () => ({
+  getOnboardingStatus: () => mockGetOnboardingStatus(),
+}));
+
 describe('ProtectedRoute', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // Default mock: quiz status check returns no onboarding needed
+    mockGetOnboardingStatus.mockResolvedValue({
+      userId: 1,
+      requiresOnboarding: false,
+      quizStatus: 'COMPLETED',
+    });
   });
 
   describe('Authentication States', () => {
-    it('renders children when user is authenticated', () => {
+    it('renders children when user is authenticated', async () => {
+      // Mock admin user (skips quiz check)
       mockUseAuth.mockReturnValue({
         isAuthenticated: true,
         isLoading: false,
+        user: { id: 1, role: 'ADMIN' },
+        isAdmin: true,
       });
 
       render(
@@ -34,7 +50,9 @@ describe('ProtectedRoute', () => {
         </MemoryRouter>
       );
 
-      expect(screen.getByText('Protected Content')).toBeInTheDocument();
+      await waitFor(() => {
+        expect(screen.getByText('Protected Content')).toBeInTheDocument();
+      });
       expect(screen.queryByText('Loading...')).not.toBeInTheDocument();
     });
 
@@ -42,6 +60,8 @@ describe('ProtectedRoute', () => {
       mockUseAuth.mockReturnValue({
         isAuthenticated: false,
         isLoading: false,
+        user: null,
+        isAdmin: false,
       });
 
       render(
@@ -62,6 +82,8 @@ describe('ProtectedRoute', () => {
       mockUseAuth.mockReturnValue({
         isAuthenticated: false,
         isLoading: true,
+        user: null,
+        isAdmin: false,
       });
 
       render(
@@ -78,10 +100,12 @@ describe('ProtectedRoute', () => {
   });
 
   describe('Edge Cases', () => {
-    it('handles rapid state changes gracefully', () => {
+    it('handles rapid state changes gracefully', async () => {
       mockUseAuth.mockReturnValue({
         isAuthenticated: false,
         isLoading: true,
+        user: null,
+        isAdmin: false,
       });
 
       const { rerender } = render(
@@ -94,10 +118,12 @@ describe('ProtectedRoute', () => {
 
       expect(screen.getByText('Loading...')).toBeInTheDocument();
 
-      // Simulate state change
+      // Simulate state change - use admin to skip quiz check
       mockUseAuth.mockReturnValue({
         isAuthenticated: true,
         isLoading: false,
+        user: { id: 1, role: 'ADMIN' },
+        isAdmin: true,
       });
 
       rerender(
@@ -108,14 +134,19 @@ describe('ProtectedRoute', () => {
         </MemoryRouter>
       );
 
-      expect(screen.getByText('Protected Content')).toBeInTheDocument();
+      await waitFor(() => {
+        expect(screen.getByText('Protected Content')).toBeInTheDocument();
+      });
       expect(screen.queryByText('Loading...')).not.toBeInTheDocument();
     });
 
-    it('renders multiple children correctly', () => {
+    it('renders multiple children correctly', async () => {
+      // Mock admin user (skips quiz check)
       mockUseAuth.mockReturnValue({
         isAuthenticated: true,
         isLoading: false,
+        user: { id: 1, role: 'ADMIN' },
+        isAdmin: true,
       });
 
       render(
@@ -127,8 +158,10 @@ describe('ProtectedRoute', () => {
         </MemoryRouter>
       );
 
-      expect(screen.getByText('First Child')).toBeInTheDocument();
-      expect(screen.getByText('Second Child')).toBeInTheDocument();
+      await waitFor(() => {
+        expect(screen.getByText('First Child')).toBeInTheDocument();
+        expect(screen.getByText('Second Child')).toBeInTheDocument();
+      });
     });
   });
 });

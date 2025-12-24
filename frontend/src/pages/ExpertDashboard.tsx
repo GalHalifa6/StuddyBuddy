@@ -44,6 +44,7 @@ import {
 
 const ExpertDashboard: React.FC = () => {
   const { user } = useAuth();
+  const { showSuccess, showError } = useToast();
   const navigate = useNavigate();
   const [profile, setProfile] = useState<ExpertProfile | null>(null);
   const [stats, setStats] = useState<DashboardStats | null>(null);

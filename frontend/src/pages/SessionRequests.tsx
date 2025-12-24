@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { sessionRequestService, SessionRequest } from '../api/experts';
 import { useToast } from '../context/ToastContext';
@@ -22,11 +22,7 @@ const SessionRequests: React.FC = () => {
   const [filterStatus, setFilterStatus] = useState<string>('');
   const [cancelRequestId, setCancelRequestId] = useState<number | null>(null);
 
-  useEffect(() => {
-    loadRequests();
-  }, []);
-
-  const loadRequests = async () => {
+  const loadRequests = useCallback(async () => {
     setLoading(true);
     try {
       const data = await sessionRequestService.getMyRequests();
@@ -37,7 +33,11 @@ const SessionRequests: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [showError]);
+
+  useEffect(() => {
+    loadRequests();
+  }, [loadRequests]);
 
   const handleCancelRequest = (requestId: number) => {
     setCancelRequestId(requestId);
